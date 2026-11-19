@@ -1,0 +1,72 @@
+name: Weekly APK build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "runtime-intelligence/**"
+      - ".github/workflows/weekly-apk.yml"
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Count open bug issues
+        id: bugs
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          count=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/issues?state=open&per_page=100" | jq -s 'add | [.[] | select(.pull_request == null and any(.labels[]?; .name == "bug"))] | length')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Open bug issues: $count"
+
+      - name: Explain why scheduled build is skipped
+        if: github.event_name == 'schedule' && steps.bugs.outputs.count < 10
+        run: echo "Open bug issue count is below 10; scheduled build is not required."
+
+      - name: Check out source
+        if: github.event_name != 'schedule' || steps.bugs.outputs.count >= 10
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        if: github.event_name != 'schedule' || steps.bugs.outputs.count >= 10
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        if: github.event_name != 'schedule' || steps.bugs.outputs.count >= 10
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: latest
+          accept-android-sdk-licenses: true
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+
+      - name: Set up Gradle
+        if: github.event_name != 'schedule' || steps.bugs.outputs.count >= 10
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Run tests and build debug APK
+        if: github.event_name != 'schedule' || steps.bugs.outputs.count >= 10
+        working-directory: runtime-intelligence
+        run: gradle :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Upload debug APK artifact
+        if: (github.event_name != 'schedule' || steps.bugs.outputs.count >= 10) && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-intelligence-debug-apk
+          path: runtime-intelligence/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
