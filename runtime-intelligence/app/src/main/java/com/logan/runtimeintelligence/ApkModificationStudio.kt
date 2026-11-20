@@ -364,8 +364,6 @@ class ApkModificationStudio(private val context: Context) {
         setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
         setFeature("http://xml.org/sax/features/external-general-entities", false)
         setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-        runCatching { setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_DTD, "") }
-        runCatching { setAttribute(javax.xml.XMLConstants.ACCESS_EXTERNAL_SCHEMA, "") }
     }
 
     private fun removeSelectedUrls(decoded: File, selectedUrls: Set<String>): Int {
