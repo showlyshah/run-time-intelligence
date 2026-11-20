@@ -164,7 +164,7 @@ class MainActivity:Activity(){
   COLORS=intArrayOf(accent,0xFF37C7F4.toInt(),0xFF8B9BFF.toInt(),0xFF54D6B0.toInt(),0xFFFFC857.toInt(),0xFFB58BFF.toInt(),0xFFFF7AA8.toInt(),0xFF66D9E8.toInt(),0xFF9AD86B.toInt(),0xFFFF9A65.toInt())
  }
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
- private fun text(s:String,size:Float=15f,color:Int=Color.WHITE):TextView=TextView(this).apply{text=s;textSize=size;setTextColor(color);setPadding(dp(12),dp(9),dp(12),dp(9));typeface=if(size>=19f)Typeface.create("sans-serif-medium",Typeface.NORMAL) else Typeface.create("sans-serif",Typeface.NORMAL)}
+ private fun text(s:String,size:Float=15f,color:Int=if(BG==0xFFF2F6FC.toInt())0xFF172033.toInt() else Color.WHITE):TextView=TextView(this).apply{text=s;textSize=size;setTextColor(color);setPadding(dp(12),dp(9),dp(12),dp(9));typeface=if(size>=19f)Typeface.create("sans-serif-medium",Typeface.NORMAL) else Typeface.create("sans-serif",Typeface.NORMAL)}
  private fun rounded(color:Int,radius:Float=18f,stroke:Int=0):android.graphics.drawable.GradientDrawable=android.graphics.drawable.GradientDrawable().apply{setColor(color);cornerRadius=dp(radius.toInt()).toFloat();if(stroke!=0)setStroke(dp(1),stroke)}
  private fun button(s:String,action:()->Unit):Button=Button(this).apply{text=s;setTextColor(0xFF172033.toInt());textSize=13f;isAllCaps=false;typeface=Typeface.DEFAULT_BOLD;background=rounded(GOLD,16f);setPadding(dp(8),dp(3),dp(8),dp(3));setOnClickListener{action()}}
  private fun panel():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(8),dp(10),dp(8));background=rounded(PANEL,18f,0xFF34465F.toInt())}
