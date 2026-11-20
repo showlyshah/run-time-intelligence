@@ -36,4 +36,5 @@ dependencies {
     implementation(files("libs/apktool-android-1.0.0.aar"))
     implementation(fileTree(mapOf("dir" to "libs/apktool-runtime", "include" to listOf("*.jar"))))
     implementation("com.android.tools.build:apksig:8.7.3")
+    testImplementation("junit:junit:4.13.2")
 }
