@@ -140,7 +140,17 @@ class ApkModificationStudio(private val context: Context) {
         return context.packageManager.getPackageArchiveInfo(apk.absolutePath, 0)
     }
 
-    private fun readNativeAbis(apk: File): Set<String> = ZipFile(apk).use { zip ->\n        val entries = zip.entries()\n        buildSet {\n            while (entries.hasMoreElements()) {\n                val name = entries.nextElement().name\n                if (name.startsWith("lib/")) name.split("/").getOrNull(1)?.let { add(it) }\n            }\n        }\n    }\n\n    private fun scan(decoded: File): List<UrlFinding> {
+    private fun readNativeAbis(apk: File): Set<String> = ZipFile(apk).use { zip ->
+        val entries = zip.entries()
+        buildSet {
+            while (entries.hasMoreElements()) {
+                val name = entries.nextElement().name
+                if (name.startsWith("lib/")) name.split("/").getOrNull(1)?.let { add(it) }
+            }
+        }
+    }
+
+    private fun scan(decoded: File): List<UrlFinding> {
         val findings = mutableListOf<UrlFinding>()
         val urlRegex = Regex("https?://[^\\s\\\"'<>]+", RegexOption.IGNORE_CASE)
         val editableExtensions = setOf("xml", "json", "txt", "properties", "html", "htm", "css", "js", "yaml", "yml")
