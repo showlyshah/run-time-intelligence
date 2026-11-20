@@ -261,8 +261,12 @@ class MonthlyBackupWorker(context:android.content.Context,params:androidx.work.W
    }
    saveBackup("LoganTechExpenses-$stamp.csv","text/csv",csv.toString().toByteArray(Charsets.UTF_8))
    saveBackup("LoganTechExpenses-$stamp-summary.txt","text/plain",summary.toByteArray(Charsets.UTF_8))
+   applicationContext.getSharedPreferences("mymoney_backup",0).edit().putLong("last_backup_time",System.currentTimeMillis()).putString("backup_state","success").remove("backup_error").apply()
    androidx.work.ListenableWorker.Result.success()
-  }catch(_:Exception){androidx.work.ListenableWorker.Result.retry()}
+  }catch(e:Exception){
+   applicationContext.getSharedPreferences("mymoney_backup",0).edit().putString("backup_state","retrying").putString("backup_error",e.message?: "Backup failed").apply()
+   androidx.work.ListenableWorker.Result.retry()
+  }
  }
  private fun saveBackup(name:String,mime:String,bytes:ByteArray){
   if(android.os.Build.VERSION.SDK_INT>=29){
