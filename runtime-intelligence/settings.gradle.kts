@@ -15,4 +15,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "RuntimeIntelligence"
-include(":app")
+include(":app", ":debug-sdk", ":sample-app")
