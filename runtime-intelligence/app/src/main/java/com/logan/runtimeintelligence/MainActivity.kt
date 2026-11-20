@@ -242,8 +242,8 @@ class MainActivity : Activity() {
         panel.addView(infoText("Package: ${result.packageName} • ${result.versionName}\nAndroid API: min ${result.minSdk} / target ${result.targetSdk}\nHost-list status: ${result.hostListStatus}\nURL references: ${result.findings.size}"))
         panel.addView(sectionTitle("URL review • select each URL to remove"))
         panel.addView(infoText("RED = exact match in downloaded ad/tracking lists. ORANGE = possible match based on hostname patterns. GREEN = no match found; it may still be a legitimate endpoint. Only checked, editable literal URLs are changed."))
-        val urlChecks = mutableListOf<Pair<UrlFinding, CheckBox>>()
-        result.findings.forEach { finding ->
+        val urlFindings = result.findings.groupBy { it.url }.values.map { group -> group.firstOrNull { it.editable } ?: group.first() }
+        urlFindings.forEach { finding ->
             val color = when (finding.confidence) {
                 "CONFIRMED" -> Color.rgb(190, 25, 35)
                 "POSSIBLE" -> Color.rgb(210, 112, 0)
@@ -262,11 +262,9 @@ class MainActivity : Activity() {
                 }
             }
             panel.addView(check)
-            urlChecks.add(finding to check)
         }
         panel.addView(sectionTitle("Manifest permission review"))
         panel.addView(infoText("Every permission starts unchecked. Select only permissions you want removed. Removing a permission can disable app features or cause runtime failures. The AD_ID permission is the Android advertising-ID opt-out signal on supported integrations; DEX SDK references are reviewed separately below."))
-        val permissionChecks = mutableListOf<Pair<PermissionFinding, CheckBox>>()
         result.permissions.forEach { permission ->
             val check = CheckBox(this).apply {
                 text = permission.name + if (permission.isAdvertisingId) " • Advertising ID permission" else ""
@@ -277,7 +275,6 @@ class MainActivity : Activity() {
                 }
             }
             panel.addView(check)
-            permissionChecks.add(permission to check)
         }
         if (result.permissions.isEmpty()) panel.addView(infoText("No requested permissions were found in the decoded manifest."))
 
