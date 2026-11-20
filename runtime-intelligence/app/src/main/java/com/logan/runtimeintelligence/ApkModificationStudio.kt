@@ -25,6 +25,9 @@ import java.util.Locale
 import java.util.zip.ZipFile
 import javax.security.auth.x500.X500Principal
 import javax.xml.parsers.DocumentBuilderFactory
+import javax.xml.XMLConstants
+import org.xml.sax.InputSource
+import java.io.StringReader
 import javax.xml.transform.OutputKeys
 import javax.xml.transform.TransformerFactory
 import javax.xml.transform.dom.DOMSource
@@ -320,7 +323,7 @@ class ApkModificationStudio(private val context: Context) {
     private fun readPermissions(manifest: File): List<PermissionFinding> {
         if (!manifest.isFile) return emptyList()
         val factory = secureDocumentFactory()
-        val document = factory.newDocumentBuilder().parse(manifest)
+        val document = secureDocumentBuilder(factory).parse(manifest)
         val nodes = document.getElementsByTagName("*")
         val output = mutableListOf<PermissionFinding>()
         for (index in 0 until nodes.length) {
@@ -338,7 +341,7 @@ class ApkModificationStudio(private val context: Context) {
 
     private fun removeSelectedPermissions(manifest: File, selected: Set<String>): Int {
         if (selected.isEmpty() || !manifest.isFile) return 0
-        val document = secureDocumentFactory().newDocumentBuilder().parse(manifest)
+        val document = secureDocumentBuilder(secureDocumentFactory()).parse(manifest)
         val nodes = document.getElementsByTagName("*")
         val remove = mutableListOf<org.w3c.dom.Node>()
         for (index in 0 until nodes.length) {
@@ -359,12 +362,27 @@ class ApkModificationStudio(private val context: Context) {
         return remove.size
     }
 
+    /**
+     * Android ships different XML parser implementations across API levels and OEM builds.
+     * Treat hardening features as best-effort: an unsupported optional feature must not abort
+     * APK decoding. The builder's resolver still prevents external entity retrieval.
+     */
     private fun secureDocumentFactory(): DocumentBuilderFactory = DocumentBuilderFactory.newInstance().apply {
         isNamespaceAware = true
-        setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-        setFeature("http://xml.org/sax/features/external-general-entities", false)
-        setFeature("http://xml.org/sax/features/external-parameter-entities", false)
+        runCatching { isXIncludeAware = false }
+        runCatching { isExpandEntityReferences = false }
+        runCatching { setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "") }
+        runCatching { setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "") }
+        runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
+        runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
+        runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
+        runCatching { setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false) }
     }
+
+    private fun secureDocumentBuilder(factory: DocumentBuilderFactory) =
+        factory.newDocumentBuilder().apply {
+            setEntityResolver { _, _ -> InputSource(StringReader("")) }
+        }
 
     private fun removeSelectedUrls(decoded: File, selectedUrls: Set<String>): Int {
         if (selectedUrls.isEmpty()) return 0
