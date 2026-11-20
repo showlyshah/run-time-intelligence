@@ -16,8 +16,8 @@ object ApkStaticAnalyzer {
         val apk = File.createTempFile("selected-apk-", ".apk", context.cacheDir)
         try {
             context.contentResolver.openInputStream(uri).use { input ->
-                requireNotNull(input) { "Unable to open the selected APK." }
-                apk.outputStream().use { output -> input.copyTo(output) }
+                val source = requireNotNull(input) { "Unable to open the selected APK." }
+                apk.outputStream().use { output -> source.copyTo(output) }
             }
             require(apk.length() in 1..150L * 1024L * 1024L) {
                 "APK is empty or exceeds the 150 MB analysis limit."
