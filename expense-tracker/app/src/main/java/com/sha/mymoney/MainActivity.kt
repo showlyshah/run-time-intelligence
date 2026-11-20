@@ -191,7 +191,7 @@ class MainActivity:Activity(){
   val today=LocalDate.now()
   val dated=bills.mapNotNull{b->try{b to ChronoUnit.DAYS.between(today,LocalDate.parse(b.dueDate))}catch(_:Exception){null}}
   val overdue=dated.count{it.second<0}
-  val dueSoon=dated.count{it.second in 0..7}
+  val dueSoon=dated.count{it.second in 0L..7L}
   c.addView(text("🧾  Recurring payments & bills",22f,GOLD))
   c.addView(text("Track rent, utilities, subscriptions, loans and regular payments.",12f,MUTED))
   val stats=panel()
