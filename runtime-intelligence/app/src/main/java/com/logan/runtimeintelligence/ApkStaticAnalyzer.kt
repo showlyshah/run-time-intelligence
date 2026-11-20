@@ -80,7 +80,18 @@ object ApkStaticAnalyzer {
                     if (!isDex && !isConfig) continue
                     if (isDex) dexFiles++
                     val remaining = (100L * 1024L * 1024L - scannedBytes).coerceAtMost(30L * 1024L * 1024L)
-                    val bytes = zip.getInputStream(entry).use { it.readNBytes(remaining.toInt()) }
+                    val bytes = zip.getInputStream(entry).use { stream ->
+                        val buffer = ByteArray(8192)
+                        val collected = java.io.ByteArrayOutputStream()
+                        var left = remaining
+                        while (left > 0) {
+                            val count = stream.read(buffer, 0, minOf(buffer.size.toLong(), left).toInt())
+                            if (count <= 0) break
+                            collected.write(buffer, 0, count)
+                            left -= count
+                        }
+                        collected.toByteArray()
+                    }
                     scannedBytes += bytes.size
                     val text = bytes.toString(Charsets.ISO_8859_1)
 
