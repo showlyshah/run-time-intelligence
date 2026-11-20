@@ -2,7 +2,7 @@ name: Weekly APK build
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**"]
     paths:
       - "runtime-intelligence/**"
       - ".github/workflows/weekly-apk.yml"
