@@ -18,7 +18,6 @@ import java.security.PrivateKey
 import java.security.cert.X509Certificate
 import java.util.Date
 import java.util.Locale
-import java.util.zip.ZipFile
 import javax.security.auth.x500.X500Principal
 
 data class UrlFinding(
@@ -151,7 +150,7 @@ class ApkModificationStudio(private val context: Context) {
                 val bytes = Files.readAllBytes(path)
                 bytesScanned += bytes.size
                 val text = bytes.toString(Charsets.UTF_8)
-                text.split('\\n').forEachIndexed { index, line ->
+                text.split('\n').forEachIndexed { index, line ->
                     urlRegex.findAll(line).forEach { match ->
                         val raw = match.value.trimEnd('.', ',', ')', ']', '}')
                         val host = runCatching { java.net.URI(raw).host?.lowercase(Locale.ROOT) }.getOrNull()
@@ -192,7 +191,7 @@ class ApkModificationStudio(private val context: Context) {
             paths.filter { Files.isRegularFile(it) }.forEach { path ->
                 val file = path.toFile()
                 if (file.extension.lowercase(Locale.ROOT) !in extensions || file.length() > 4L * 1024L * 1024L) return@forEach
-                val original = runCatching { Files.readString(path) }.getOrNull() ?: return@forEach
+                val original = runCatching { Files.readAllBytes(path).toString(Charsets.UTF_8) }.getOrNull() ?: return@forEach
                 val updated = urlRegex.replace(original) { match ->
                     val raw = match.value.trimEnd('.', ',', ')', ']', '}')
                     val host = runCatching { java.net.URI(raw).host?.lowercase(Locale.ROOT) }.getOrNull()
@@ -201,7 +200,7 @@ class ApkModificationStudio(private val context: Context) {
                         ""
                     } else match.value
                 }
-                if (updated != original) Files.writeString(path, updated)
+                if (updated != original) Files.write(path, updated.toByteArray(Charsets.UTF_8))
             }
         }
         return replacements
