@@ -1,6 +1,8 @@
 package com.sha.mymoney
 
 import android.app.*
+import android.content.Intent
+import android.graphics.pdf.PdfDocument
 import android.os.Bundle
 import android.graphics.*
 import android.view.*
@@ -9,6 +11,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import java.text.SimpleDateFormat
 import java.util.*
+import java.io.ByteArrayOutputStream
 
 private const val BG = 0xFF101827.toInt()
 private const val PANEL = 0xFF1D2A3D.toInt()
@@ -57,6 +60,7 @@ class MainActivity:Activity(){
  private var tab=0
  private var period="Month"
  private var chosenCategory:String?=null
+ private var exportFormat="pdf"
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
  private fun text(s:String,size:Float=15f,color:Int=Color.WHITE):TextView=TextView(this).apply{text=s;textSize=size;setTextColor(color);setPadding(dp(12),dp(9),dp(12),dp(9));typeface=if(size>=19f)Typeface.create("sans-serif-medium",Typeface.NORMAL) else Typeface.create("sans-serif",Typeface.NORMAL)}
  private fun rounded(color:Int,radius:Float=18f,stroke:Int=0):android.graphics.drawable.GradientDrawable=android.graphics.drawable.GradientDrawable().apply{setColor(color);cornerRadius=dp(radius.toInt()).toFloat();if(stroke!=0)setStroke(dp(1),stroke)}
@@ -72,7 +76,7 @@ class MainActivity:Activity(){
   val nav=LinearLayout(this).apply{background=rounded(PANEL,20f);gravity=Gravity.CENTER};listOf("📒\\nRecords","📊\\nAnalysis","🎯\\nBudgets","🏦\\nAccounts","🎨\\nCategories").forEachIndexed{i,n->val b=TextView(this).apply{text=n;textSize=10f;gravity=Gravity.CENTER;setTextColor(if(tab==i)GOLD else MUTED);setTypeface(null,if(tab==i)Typeface.BOLD else Typeface.NORMAL);setPadding(dp(2),dp(9),dp(2),dp(9));setOnClickListener{tab=i;chosenCategory=null;show()}};nav.addView(b,LinearLayout.LayoutParams(0,-2,1f))};root.addView(nav);setContentView(root)
  }
  private fun totals(list:List<Tx>,kind:String)=list.filter{it.kind==kind}.sumOf{it.amount}
- private fun records(c:LinearLayout){val data=store.all();val card=panel();card.addView(text("TOTAL BALANCE",12f,MUTED));val opening=store.accounts().sumOf{it.opening};card.addView(text(money(opening+totals(data,"Income")-totals(data,"Expense")),30f,GOLD));val row=LinearLayout(this);row.addView(text("Income  "+money(totals(data,"Income")),14f,0xFF72D6A8.toInt()),LinearLayout.LayoutParams(0,-2,1f));row.addView(text("Expense  "+money(totals(data,"Expense")),14f,0xFFE58B7D.toInt()));card.addView(row);c.addView(card);c.addView(button("+ Add transaction"){editTransaction(null)})
+ private fun records(c:LinearLayout){val data=store.all();val card=panel();card.addView(text("TOTAL BALANCE",12f,MUTED));val opening=store.accounts().sumOf{it.opening};card.addView(text(money(opening+totals(data,"Income")-totals(data,"Expense")),30f,GOLD));val row=LinearLayout(this);row.addView(text("Income  "+money(totals(data,"Income")),14f,0xFF72D6A8.toInt()),LinearLayout.LayoutParams(0,-2,1f));row.addView(text("Expense  "+money(totals(data,"Expense")),14f,0xFFE58B7D.toInt()));card.addView(row);c.addView(card);c.addView(button("+ Add transaction"){editTransaction(null)});c.addView(button("📤  Export & backup"){exportDialog()})
   c.addView(text("Recent transactions",19f,GOLD));if(data.isEmpty())c.addView(text("No entries yet. Add your first income or expense."));data.forEach{t->val p=panel();p.addView(text(categoryIcon(t.category)+"  "+t.title+"  •  "+t.category,16f,COLORS[(store.categories().indexOf(t.category).coerceAtLeast(0))%COLORS.size]));p.addView(text(t.date+"  •  "+t.account+"     "+(if(t.kind=="Income")"+" else "−")+money(t.amount),14f,if(t.kind=="Income")0xFF72D6A8.toInt() else 0xFFE58B7D.toInt()));p.setOnClickListener{editTransaction(t)};p.setOnLongClickListener{AlertDialog.Builder(this).setMessage("Delete this transaction?").setPositiveButton("Delete"){_,_->store.remove(t.id);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)}}
  private fun editTransaction(old:Tx?){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)}
   val title=EditText(this).apply{hint="Description";setText(old?.title?:"")}
@@ -95,6 +99,55 @@ class MainActivity:Activity(){
  private fun accountsPage(c:LinearLayout){c.addView(text("Accounts",22f,GOLD));c.addView(button("+ Add account"){accountDialog(null)});store.accounts().forEach{a->val balance=a.opening+store.all().filter{it.account==a.name&&it.kind=="Income"}.sumOf{it.amount}-store.all().filter{it.account==a.name&&it.kind=="Expense"}.sumOf{it.amount};val p=panel();p.addView(text(categoryIcon(a.name)+"  "+a.name,17f,GOLD));p.addView(text("Current balance  "+money(balance),15f,GOLD));p.addView(text("Opening balance  "+money(a.opening),12f,MUTED));p.setOnClickListener{accountDialog(a)};p.setOnLongClickListener{if(a.name=="Cash"){Toast.makeText(this,"The default Cash account cannot be deleted",Toast.LENGTH_SHORT).show()}else AlertDialog.Builder(this).setMessage("Delete account? Existing transactions will remain but be assigned to Cash.").setPositiveButton("Delete"){_,_->store.all().filter{it.account==a.name}.forEach{store.save(it.copy(account="Cash"))};store.deleteAccount(a.id);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)}}
  private fun accountDialog(old:Account?){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)};val name=EditText(this).apply{hint="Account name";setText(old?.name?:"")};val opening=EditText(this).apply{hint="Opening balance";inputType=8194;setText(old?.opening?.toString()?:"0")};box.addView(name);box.addView(opening);AlertDialog.Builder(this).setTitle(if(old==null)"New account" else "Edit account").setView(box).setPositiveButton("Save"){_,_->val v=opening.text.toString().toDoubleOrNull();if(name.text.isNotBlank()&&v!=null){store.saveAccount(old?.id?:0L,name.text.toString().trim(),v);show()}else Toast.makeText(this,"Enter account name and valid balance",Toast.LENGTH_SHORT).show()}.setNegativeButton("Cancel",null).show()}
  private fun categoriesPage(c:LinearLayout){c.addView(text("Categories",22f,GOLD));c.addView(button("+ Add category"){val e=EditText(this).apply{hint="Category name"};AlertDialog.Builder(this).setTitle("New category").setView(e).setPositiveButton("Add"){_,_->if(e.text.isNotBlank()){store.addCategory(e.text.toString().trim());show()}}.setNegativeButton("Cancel",null).show()});store.categories().forEach{n->val p=panel();p.orientation=LinearLayout.HORIZONTAL;p.gravity=Gravity.CENTER_VERTICAL;p.addView(text(categoryIcon(n),24f));p.addView(text(n,16f,COLORS[(store.categories().indexOf(n).coerceAtLeast(0))%COLORS.size]),LinearLayout.LayoutParams(0,-2,1f));p.addView(text("⋮",20f,MUTED));p.setOnLongClickListener{AlertDialog.Builder(this).setMessage("Delete category $n? Existing transactions keep this category label.").setPositiveButton("Delete"){_,_->store.deleteCategory(n);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)}}
+
+ private fun exportDialog(){
+  val options=arrayOf("Save PDF summary","Save CSV transaction report","Share summary to Google Keep / Notes")
+  AlertDialog.Builder(this).setTitle("Export & backup").setItems(options){_,which->when(which){0->createExportFile("pdf");1->createExportFile("csv");2->shareSummaryNote()}}.setNegativeButton("Cancel",null).show()
+ }
+ private fun createExportFile(format:String){
+  exportFormat=format
+  val stamp=SimpleDateFormat("yyyyMMdd-HHmm",Locale.US).format(Date())
+  val intent=Intent(Intent.ACTION_CREATE_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type=if(format=="pdf")"application/pdf" else "text/csv";putExtra(Intent.EXTRA_TITLE,"MyMoney-$stamp.$format")}
+  startActivityForResult(intent,710)
+ }
+ override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
+  super.onActivityResult(requestCode,resultCode,data)
+  if(requestCode==710&&resultCode==Activity.RESULT_OK){val uri=data?.data?:return
+   try{val bytes=if(exportFormat=="pdf")buildSummaryPdf() else buildTransactionsCsv().toByteArray(Charsets.UTF_8);contentResolver.openOutputStream(uri)?.use{it.write(bytes)};Toast.makeText(this,"MyMoney export saved successfully",Toast.LENGTH_LONG).show()}
+   catch(e:Exception){Toast.makeText(this,"Export failed: "+e.message,Toast.LENGTH_LONG).show()}
+  }
+ }
+ private fun summaryText():String{
+  val tx=store.all();val income=totals(tx,"Income");val expense=totals(tx,"Expense");val opening=store.accounts().sumOf{it.opening};val out=StringBuilder()
+  out.append("MYMONEY FINANCIAL SUMMARY\n")
+  out.append("Generated: ").append(SimpleDateFormat("dd MMM yyyy, HH:mm",Locale.getDefault()).format(Date())).append("\n\n")
+  out.append("Total balance: ").append(money(opening+income-expense)).append("\n")
+  out.append("Total income: ").append(money(income)).append("\n")
+  out.append("Total expenses: ").append(money(expense)).append("\n")
+  out.append("Transactions: ").append(tx.size).append("\n\nCATEGORY SPENDING\n")
+  tx.filter{it.kind=="Expense"}.groupBy{it.category}.mapValues{e->e.value.sumOf{it.amount}}.toList().sortedByDescending{it.second}.forEach{out.append(it.first).append(": ").append(money(it.second)).append("\n")}
+  out.append("\nACCOUNT BALANCES\n")
+  store.accounts().forEach{a->val rows=tx.filter{it.account==a.name};out.append(a.name).append(": ").append(money(a.opening+totals(rows,"Income")-totals(rows,"Expense"))).append("\n")}
+  out.append("\nTRANSACTIONS\n")
+  tx.forEach{t->out.append(t.date).append(" | ").append(t.kind).append(" | ").append(t.category).append(" | ").append(t.title).append(" | ").append(money(t.amount)).append(" | ").append(t.account).append("\n")}
+  return out.toString()
+ }
+ private fun buildTransactionsCsv():String{
+  val out=StringBuilder("Date,Type,Category,Description,Amount,Account\n")
+  store.all().forEach{t->val fields=listOf(t.date,t.kind,t.category,t.title,t.amount.toString(),t.account);out.append(fields.joinToString(","){ "\""+it.replace("\"","\"\"")+"\"" }).append("\n")}
+  return out.toString()
+ }
+ private fun buildSummaryPdf():ByteArray{
+  val lines=summaryText().split("\n");val doc=PdfDocument();val pageHeight=maxOf(842,lines.size*19+90)
+  val page=doc.startPage(PdfDocument.PageInfo.Builder(595,pageHeight,1).create());val canvas=page.canvas;val p=Paint(Paint.ANTI_ALIAS_FLAG);canvas.drawColor(Color.WHITE);var y=48f
+  lines.forEachIndexed{index,line->p.color=if(index==0)0xFF172033.toInt() else if(line.endsWith("SPENDING")||line.endsWith("BALANCES")||line=="TRANSACTIONS")0xFF176B87.toInt() else 0xFF263238.toInt();p.textSize=if(index==0)19f else 10.5f;p.typeface=if(index==0||line.endsWith("SPENDING")||line.endsWith("BALANCES")||line=="TRANSACTIONS")Typeface.DEFAULT_BOLD else Typeface.DEFAULT;canvas.drawText(line.take(95),36f,y,p);y+=if(index==0)30f else 17f}
+  doc.finishPage(page);val stream=ByteArrayOutputStream();doc.writeTo(stream);doc.close();return stream.toByteArray()
+ }
+ private fun shareSummaryNote(){
+  val intent=Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_SUBJECT,"MyMoney financial summary");putExtra(Intent.EXTRA_TEXT,summaryText())}
+  startActivity(Intent.createChooser(intent,"Save summary to Google Keep / Notes"))
+ }
+
 }
 class PieView(ctx:android.content.Context,private val values:Map<String,Double>,private val onSelect:(String)->Unit):View(ctx){
  private val paint=Paint(3)
