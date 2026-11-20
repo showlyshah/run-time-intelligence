@@ -7,7 +7,7 @@ on:
       - ".github/workflows/mymoney-apk.yml"
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -26,45 +26,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Prepare permanent app signing key
-        env:
-          LOGANTECH_KEYSTORE_BASE64: ${{ secrets.LOGANTECH_KEYSTORE_BASE64 }}
-          LOGANTECH_KEYSTORE_PASSWORD: ${{ secrets.LOGANTECH_KEYSTORE_PASSWORD }}
-          LOGANTECH_KEY_ALIAS: ${{ secrets.LOGANTECH_KEY_ALIAS }}
-          LOGANTECH_KEY_PASSWORD: ${{ secrets.LOGANTECH_KEY_PASSWORD }}
-        run: |
-          test -n "$LOGANTECH_KEYSTORE_BASE64" || (echo "Missing GitHub Actions secret LOGANTECH_KEYSTORE_BASE64" && exit 1)
-          test -n "$LOGANTECH_KEYSTORE_PASSWORD" || (echo "Missing GitHub Actions secret LOGANTECH_KEYSTORE_PASSWORD" && exit 1)
-          test -n "$LOGANTECH_KEY_ALIAS" || (echo "Missing GitHub Actions secret LOGANTECH_KEY_ALIAS" && exit 1)
-          test -n "$LOGANTECH_KEY_PASSWORD" || (echo "Missing GitHub Actions secret LOGANTECH_KEY_PASSWORD" && exit 1)
-          echo "$LOGANTECH_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/logantech-release.jks"
-          test -s "$RUNNER_TEMP/logantech-release.jks"
-      - name: Build permanently signed APK
+      - name: Build temporary debug APK
         working-directory: expense-tracker
-        env:
-          LOGANTECH_KEYSTORE_PATH: ${{ runner.temp }}/logantech-release.jks
-          LOGANTECH_KEYSTORE_PASSWORD: ${{ secrets.LOGANTECH_KEYSTORE_PASSWORD }}
-          LOGANTECH_KEY_ALIAS: ${{ secrets.LOGANTECH_KEY_ALIAS }}
-          LOGANTECH_KEY_PASSWORD: ${{ secrets.LOGANTECH_KEY_PASSWORD }}
-        run: gradle :app:assembleRelease --no-daemon --stacktrace
-      - name: Upload installable APK
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+      - name: Upload installable test APK
         uses: actions/upload-artifact@v4
         with:
-          name: LoganTech-Expenses-Tracker-apk
-          path: expense-tracker/app/build/outputs/apk/release/app-release.apk
+          name: LoganTech-Expenses-Tracker-0.3.4-debug
+          path: expense-tracker/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
-      - name: Read app version
-        id: version
-        working-directory: expense-tracker
-        run: |
-          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-      - name: Publish versioned GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: LoganTech Expenses Tracker v${{ steps.version.outputs.version }}
-          body: "LoganTech Expenses Tracker Android release. Install the permanently signed APK attached to this release."
-          files: expense-tracker/app/build/outputs/apk/release/app-release.apk
-          make_latest: true
