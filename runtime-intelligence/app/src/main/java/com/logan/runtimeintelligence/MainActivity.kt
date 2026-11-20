@@ -198,6 +198,7 @@ class MainActivity : Activity() {
         }
         if (requestCode == APK_PICK_REQUEST && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
+            beginBackgroundWork("Analysing APK metadata and manifest")
             status.text = "Analysing selected APK locally…"
             Thread {
                 val result = try {
@@ -209,6 +210,7 @@ class MainActivity : Activity() {
                     report.text = result
                     status.text = "Static APK inspection finished • APK was not executed"
                 }
+                finishBackgroundWork()
             }.start()
         }
     }
