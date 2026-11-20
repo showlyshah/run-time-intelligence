@@ -157,11 +157,11 @@ class MainActivity:Activity(){
   root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(BG);setPadding(dp(12),dp(10),dp(12),dp(10))}
   val head=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
   head.addView(text("💠 LoganTech Expenses Tracker",20f,GOLD),LinearLayout.LayoutParams(0,-2,1f))
-  head.addView(text("SMART FINANCE",10f,MUTED));root.addView(head)
+  head.addView(text(if(tab==6)"← BACK" else "ⓘ ABOUT",11f,GOLD).apply{setOnClickListener{tab=if(tab==6)0 else 6;show()}});root.addView(head)
   val body=ScrollView(this).apply{clipToPadding=false;isFillViewport=false}
   val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
   body.addView(content);root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
-  when(tab){0->records(content);1->analysis(content);2->budgetsPage(content);3->accountsPage(content);4->categoriesPage(content);5->billsPage(content)}
+  when(tab){0->records(content);1->analysis(content);2->budgetsPage(content);3->accountsPage(content);4->categoriesPage(content);5->billsPage(content);6->aboutPage(content)}
   val nav=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=rounded(PANEL,20f);setPadding(dp(5),dp(5),dp(5),dp(5))}
   val labels=listOf("📒  Records","📊  Analysis","🎯  Budgets","🏦  Accounts","🎨  Categories","🧾  Bills")
   for(rowIndex in 0..1){
@@ -189,6 +189,23 @@ class MainActivity:Activity(){
    insets.consumeSystemWindowInsets()
   }
   root.requestApplyInsets()
+ }
+ private fun aboutPage(c:LinearLayout){
+  c.addView(text("ABOUT THIS APP",12f,MUTED))
+  val hero=panel().apply{gravity=Gravity.CENTER;setPadding(dp(20),dp(34),dp(20),dp(34))}
+  hero.addView(text("⚡",42f,GOLD).apply{gravity=Gravity.CENTER})
+  hero.addView(text("LOGANTECH",25f,Color.WHITE).apply{gravity=Gravity.CENTER;typeface=Typeface.create("sans-serif-black",Typeface.BOLD)})
+  hero.addView(text("EXPENSES TRACKER",14f,GOLD).apply{gravity=Gravity.CENTER})
+  val credit=text("VIBE CODED BY POWER WIZARD LABZ",16f,0xFF72D6A8.toInt()).apply{gravity=Gravity.CENTER;setPadding(dp(4),dp(22),dp(4),dp(12));typeface=Typeface.create("sans-serif-medium",Typeface.BOLD)}
+  hero.addView(credit)
+  c.addView(hero)
+  val details=panel()
+  details.addView(text("Your money. Your overview.",18f,GOLD))
+  details.addView(text("Track income, expenses, budgets, accounts and recurring bills in one place. Your financial data is stored locally on this device.",13f,MUTED))
+  val version=try{packageManager.getPackageInfo(packageName,0).versionName?: "Unknown"}catch(_:Exception){"Unknown"}
+  details.addView(text("Version  $version",12f,MUTED))
+  c.addView(details)
+  c.addView(button("←  Back to Records"){tab=0;show()})
  }
  private fun totals(list:List<Tx>,kind:String)=list.filter{it.kind==kind}.sumOf{it.amount}
  private fun records(c:LinearLayout){
