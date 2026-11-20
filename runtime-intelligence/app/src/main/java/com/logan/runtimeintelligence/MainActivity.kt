@@ -2,57 +2,54 @@ package com.logan.runtimeintelligence
 
 import android.app.Activity
 import android.os.Bundle
-import android.view.Gravity
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 
-/**
- * Lightweight landing screen.
- *
- * Device-wide RAM statistics and refresh polling were deliberately removed.
- * This activity does not query ActivityManager, collect telemetry, or start
- * background monitoring. Runtime diagnostics can be added later as explicit,
- * user-triggered features with clear privacy controls.
- */
 class MainActivity : Activity() {
+    private lateinit var memorySummary: TextView
+    private lateinit var status: TextView
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val density = resources.displayMetrics.density
-        fun dp(value: Int): Int = (value * density + 0.5f).toInt()
-
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(28), dp(32), dp(28), dp(32))
+            setPadding(40, 48, 40, 40)
         }
 
         val heading = TextView(this).apply {
             text = "Runtime Intelligence"
-            textSize = 25f
-            gravity = Gravity.CENTER
+            textSize = 26f
         }
-        val status = TextView(this).apply {
-            text = "Device statistics are disabled. No device RAM telemetry is being collected."
+        status = TextView(this).apply {
+            text = "Device memory dashboard"
             textSize = 15f
-            gravity = Gravity.CENTER
-            setPadding(0, dp(16), 0, 0)
+            setPadding(0, 16, 0, 24)
+        }
+        memorySummary = TextView(this).apply {
+            textSize = 18f
+            setPadding(0, 0, 0, 24)
+            text = "Device-level statistics collection is disabled."
+        }
+        val refresh = Button(this).apply {
+            text = "Refresh status"
+            setOnClickListener { refreshStatus() }
         }
 
-        root.addView(
-            heading,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        )
-        root.addView(
-            status,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        )
+        root.addView(heading)
+        root.addView(status)
+        root.addView(memorySummary)
+        root.addView(refresh)
         setContentView(root)
+    }
+
+    /**
+     * Keep the original dashboard layout and refresh control, but do not read
+     * or generate statistics about this device.
+     */
+    private fun refreshStatus() {
+        status.text = "Device statistics collection remains disabled."
+        memorySummary.text = "No device-level RAM statistics are collected."
     }
 }
