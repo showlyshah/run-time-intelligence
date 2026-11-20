@@ -42,6 +42,23 @@ class MainActivity : Activity() {
         }
         content.addView(status)
 
+        content.addView(sectionTitle("App sandbox lab"))
+        content.addView(TextView(this).apply {
+            text = "Import an APK to inspect its declared permissions, exported components, code strings, network hostnames, IP-like strings, and possible embedded-secret patterns. The APK is analysed as a file only: it is never installed or executed."
+            textSize = 14f
+            setPadding(0, 4, 0, 12)
+        })
+        content.addView(Button(this).apply {
+            text = "Import APK for static analysis"
+            setOnClickListener {
+                val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/vnd.android.package-archive"
+                }
+                startActivityForResult(picker, APK_PICK_REQUEST)
+            }
+        })
+
         content.addView(sectionTitle("Memory intelligence"))
         content.addView(TextView(this).apply {
             text = "Inspects this app's own process only. Android does not allow ordinary apps to read another app's private heap or secret keys."
@@ -72,6 +89,26 @@ class MainActivity : Activity() {
         val scroll = ScrollView(this).apply { addView(content) }
         setContentView(scroll)
         refreshDiagnostics()
+    }
+
+    @Deprecated("Deprecated in Android API; retained for API 26 compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == APK_PICK_REQUEST && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            status.text = "Analysing selected APK locally…"
+            Thread {
+                val result = try {
+                    ApkStaticAnalyzer.analyze(this, uri)
+                } catch (error: Exception) {
+                    "APK analysis failed: ${error.message ?: error.javaClass.simpleName}"
+                }
+                runOnUiThread {
+                    report.text = result
+                    status.text = "Static APK inspection finished • APK was not executed"
+                }
+            }.start()
+        }
     }
 
     override fun onResume() {
@@ -206,5 +243,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val MB = 1024.0 * 1024.0
+        private const val APK_PICK_REQUEST = 4102
     }
 }
