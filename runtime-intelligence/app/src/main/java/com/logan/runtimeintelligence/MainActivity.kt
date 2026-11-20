@@ -3,16 +3,20 @@ package com.logan.runtimeintelligence
 import android.app.Activity
 import android.app.ActivityManager
 import android.app.AppOpsManager
+import android.app.admin.DevicePolicyManager
 import android.app.usage.NetworkStats
 import android.app.usage.NetworkStatsManager
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.Debug
+import android.os.PowerManager
 import android.os.Process
+import android.os.UserManager
 import android.provider.Settings
-import android.view.Gravity
+import android.net.Uri
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -36,59 +40,85 @@ class MainActivity : Activity() {
             textSize = 27f
         })
         status = TextView(this).apply {
-            text = "Local diagnostics • Monitoring is off until you request a refresh"
+            text = "Local security diagnostics • User-controlled"
             textSize = 14f
             setPadding(0, 12, 0, 20)
         }
         content.addView(status)
 
-        content.addView(sectionTitle("App sandbox lab"))
-        content.addView(TextView(this).apply {
-            text = "Import an APK to inspect its declared permissions, exported components, code strings, network hostnames, IP-like strings, and possible embedded-secret patterns. The APK is analysed as a file only: it is never installed or executed."
-            textSize = 14f
-            setPadding(0, 4, 0, 12)
+        content.addView(sectionTitle("Sandbox & app inspection"))
+        content.addView(infoText("Inspect APK files without installing them. Audit installed apps' declared permissions, debug flags and exported components. This app does not read other apps' private memory, files, passwords or cryptographic keys."))
+        content.addView(actionButton("Import APK for static analysis") {
+            val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/vnd.android.package-archive"
+            }
+            startActivityForResult(picker, APK_PICK_REQUEST)
         })
-        content.addView(Button(this).apply {
-            text = "Import APK for static analysis"
-            setOnClickListener {
-                val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "application/vnd.android.package-archive"
+        content.addView(actionButton("Audit installed user apps") {
+            status.text = "Building local package inventory…"
+            Thread {
+                val result = InstalledAppAudit.createReport(this)
+                runOnUiThread {
+                    report.text = result
+                    status.text = "Installed-app audit complete • metadata only"
                 }
-                startActivityForResult(picker, APK_PICK_REQUEST)
-            }
+            }.start()
         })
 
-        content.addView(sectionTitle("Memory intelligence"))
-        content.addView(TextView(this).apply {
-            text = "Inspects this app's own process only. Android does not allow ordinary apps to read another app's private heap or secret keys."
-            textSize = 14f
-            setPadding(0, 4, 0, 12)
+        content.addView(sectionTitle("Special access & administration"))
+        content.addView(infoText("Grant only the access you need. Android requires you to approve special access in Settings. Device Owner and Work Profile ownership require managed-device provisioning; this app cannot grant itself administrator status."))
+        content.addView(actionButton("Open Usage Access settings") {
+            openSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+        })
+        content.addView(actionButton("Open Notification Access settings") {
+            openSettings(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        })
+        content.addView(actionButton("Open Battery Optimisation settings") {
+            openSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        })
+        content.addView(actionButton("Open this app's system settings") {
+            openSettings(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
         })
 
-        val usageAccess = Button(this).apply {
-            text = "Grant usage access for app statistics"
-            setOnClickListener {
-                startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-            }
-        }
-        content.addView(usageAccess)
-
-        val refresh = Button(this).apply {
-            text = "Refresh diagnostics"
-            setOnClickListener { refreshDiagnostics() }
-        }
-        content.addView(refresh)
+        content.addView(sectionTitle("Memory & network diagnostics"))
+        content.addView(infoText("Memory figures below belong to Runtime Intelligence itself. Per-app network figures are Android's aggregate UID counters; they do not expose packet contents or remote endpoints."))
+        content.addView(actionButton("Refresh device and network diagnostics") { refreshDiagnostics() })
 
         report = TextView(this).apply {
             textSize = 14f
+            setTextIsSelectable(true)
             setPadding(0, 16, 0, 24)
         }
         content.addView(report)
 
-        val scroll = ScrollView(this).apply { addView(content) }
-        setContentView(scroll)
+        setContentView(ScrollView(this).apply { addView(content) })
         refreshDiagnostics()
+    }
+
+    private fun infoText(value: String) = TextView(this).apply {
+        text = value
+        textSize = 14f
+        setPadding(0, 4, 0, 12)
+    }
+
+    private fun sectionTitle(value: String) = TextView(this).apply {
+        text = value
+        textSize = 20f
+        setPadding(0, 20, 0, 6)
+    }
+
+    private fun actionButton(label: String, action: () -> Unit) = Button(this).apply {
+        text = label
+        setOnClickListener { action() }
+    }
+
+    private fun openSettings(intent: Intent) {
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            status.text = "This Settings page is not available on this device."
+        }
     }
 
     @Deprecated("Deprecated in Android API; retained for API 26 compatibility")
@@ -114,12 +144,6 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::report.isInitialized) refreshDiagnostics()
-    }
-
-    private fun sectionTitle(value: String) = TextView(this).apply {
-        text = value
-        textSize = 20f
-        setPadding(0, 18, 0, 6)
     }
 
     private fun refreshDiagnostics() {
@@ -152,15 +176,30 @@ class MainActivity : Activity() {
             Debug.getNativeHeapAllocatedSize() / MB
         ))
 
+        output.append("AVAILABLE PRIVILEGES / MANAGEMENT STATE\n")
+        output.append("Usage Access: ${if (hasUsageAccess()) "GRANTED" else "not granted"}\n")
+        output.append("Notification Listener: ${if (hasNotificationAccess()) "enabled" else "not enabled"}\n")
+        val power = getSystemService(POWER_SERVICE) as PowerManager
+        output.append("Battery optimisation exemption: ${if (power.isIgnoringBatteryOptimizations(packageName)) "exempt" else "standard"}\n")
+        val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        output.append("Device Owner: ${if (dpm.isDeviceOwnerApp(packageName)) "YES" else "no"}\n")
+        output.append("Profile Owner: ${if (dpm.isProfileOwnerApp(packageName)) "YES" else "no"}\n")
+        val userManager = getSystemService(USER_SERVICE) as UserManager
+        output.append("Running inside managed Work Profile: ${if (userManager.isManagedProfile) "YES" else "no"}\n")
+        output.append("Note: administrator / profile-owner privileges require explicit enterprise provisioning.\n\n")
+
+        output.append("ACTIVE NETWORK\n")
+        output.append(readNetworkState())
+        output.append("\n")
+
         output.append("INSTALLED-APP NETWORK USAGE (LAST 24 HOURS)\n")
         if (!hasUsageAccess()) {
-            output.append("Usage access is not enabled. Tap the access button above, enable Runtime Intelligence, then return and refresh.\n")
-            status.text = "Waiting for your explicit Usage Access permission"
+            output.append("Enable Usage Access above, return here, then refresh.\n")
+            status.text = "Some diagnostics need additional user-approved access"
         } else {
             output.append(readLauncherAppNetworkUsage())
-            status.text = "Updated just now • On-demand local statistics"
+            status.text = "Diagnostics refreshed • local collection only"
         }
-
         report.text = output.toString()
     }
 
@@ -173,6 +212,26 @@ class MainActivity : Activity() {
             packageName
         )
         return mode == AppOpsManager.MODE_ALLOWED
+    }
+
+    private fun hasNotificationAccess(): Boolean {
+        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
+        return enabled.split(':').any { it.contains(packageName) }
+    }
+
+    private fun readNetworkState(): String {
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.activeNetwork ?: return "No active network reported.\n"
+        val caps = cm.getNetworkCapabilities(network) ?: return "Network capabilities unavailable.\n"
+        val kind = when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Cellular"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN"
+            else -> "Other"
+        }
+        val link = cm.getLinkProperties(network)
+        return "Transport: $kind\nInterface: ${link?.interfaceName ?: "unknown"}\nDNS servers: ${link?.dnsServers?.joinToString { it.hostAddress ?: "?" } ?: "not available"}\n"
     }
 
     private fun readLauncherAppNetworkUsage(): String {
@@ -194,10 +253,7 @@ class MainActivity : Activity() {
         for ((appPackage, uid) in apps) {
             var received = 0L
             var sent = 0L
-            for (networkType in intArrayOf(
-                ConnectivityManager.TYPE_WIFI,
-                ConnectivityManager.TYPE_MOBILE
-            )) {
+            for (networkType in intArrayOf(ConnectivityManager.TYPE_WIFI, ConnectivityManager.TYPE_MOBILE)) {
                 var stats: NetworkStats? = null
                 try {
                     stats = manager.querySummaryForUid(networkType, null, start, end, uid)
@@ -209,30 +265,24 @@ class MainActivity : Activity() {
                         }
                     }
                 } catch (_: Exception) {
-                    // Some devices/carriers do not expose a bucket for this network type.
+                    // Network type may not be available on this device.
                 } finally {
                     stats?.close()
                 }
             }
             if (received > 0 || sent > 0) {
                 val label = try {
-                    packageManager.getApplicationLabel(
-                        packageManager.getApplicationInfo(appPackage, 0)
-                    ).toString()
-                } catch (_: Exception) {
-                    appPackage
-                }
+                    packageManager.getApplicationLabel(packageManager.getApplicationInfo(appPackage, 0)).toString()
+                } catch (_: Exception) { appPackage }
                 lines.add(Triple(label, received, sent))
             }
         }
 
-        if (lines.isEmpty()) {
-            return "Android returned no per-app traffic buckets for this period.\n"
-        }
+        if (lines.isEmpty()) return "No per-app traffic buckets returned for this period.\n"
         return lines.sortedByDescending { it.second + it.third }
             .joinToString("\n") { (label, rx, tx) ->
                 "$label\n  Downloaded: ${formatBytes(rx)} • Uploaded: ${formatBytes(tx)}"
-            } + "\n\nNote: Android usage statistics show aggregate bytes, not packet contents, destination IPs, or decrypted HTTPS messages. Attribution and availability vary by device."
+            } + "\n\nAggregate bytes only; not destination IPs or packet payloads. Device support and UID attribution vary."
     }
 
     private fun formatBytes(bytes: Long): String = when {
