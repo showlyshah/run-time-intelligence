@@ -1,0 +1,14 @@
+<resources>
+    <style name="Theme.LoganTech" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#1769D2</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#39BDF8</item>
+        <item name="colorOnSecondary">#001D32</item>
+        <item name="colorTertiary">#8C9EFF</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">#080E1B</item>
+        <item name="android:statusBarColor">#080E1B</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>
