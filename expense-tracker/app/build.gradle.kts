@@ -9,8 +9,22 @@ android {
         applicationId = "com.sha.mymoney"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.3.3"
+        versionCode = 8
+        versionName = "0.3.4"
+    }
+    signingConfigs {
+        create("release") {
+            storeFile = file(System.getenv("LOGANTECH_KEYSTORE_PATH") ?: "logantech-release.jks")
+            storePassword = System.getenv("LOGANTECH_KEYSTORE_PASSWORD") ?: ""
+            keyAlias = System.getenv("LOGANTECH_KEY_ALIAS") ?: ""
+            keyPassword = System.getenv("LOGANTECH_KEY_PASSWORD") ?: ""
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
