@@ -1,22 +1,37 @@
 # Runtime Intelligence
 
-Lightweight Android shell for the LoganTech Runtime Intelligence project.
+Android app for the LoganTech Runtime Intelligence project.
 
-## Current implementation
+## Current app behavior
 
-- Minimal launcher screen with no device-statistics generation.
-- No `ActivityManager` RAM queries, telemetry collection, refresh polling, or background monitor.
+- Preserves the original Runtime Intelligence dashboard layout: title, status area, statistics panel, and refresh control.
+- The app does **not** collect or calculate statistics about its own device. In particular, it does not query Android `ActivityManager`, `MemoryInfo`, total RAM, available RAM, or used RAM.
+- The refresh control only refreshes the static privacy/status message; it does not read device statistics.
+- No background device-statistics polling or telemetry collection is enabled.
 - Minimum Android version: API 26 (Android 8.0).
 - Target SDK: API 35.
 
-Device-wide statistics have deliberately been removed to reduce runtime work and avoid collecting data that is not needed. Future diagnostics should be explicitly user-triggered and privacy-scoped.
+Only device-statistics collection was removed. The dashboard structure and unrelated project files are retained.
+
+## Build and reverse-engineering toolchain
+
+This project has Kotlin source, so the reliable rebuild path is the Android Gradle Plugin with the Android D8 compiler (and R8 where applicable). It is preferable to rebuilding source code by decoding an APK to Smali and reassembling it.
+
+The CI pipeline uses:
+
+- **Gradle + Android D8** to compile the Kotlin app and produce DEX/APK output.
+- **JADX 1.5.7** to decompile the generated APK back to readable Java for a post-build inspection that confirms device RAM collection code is absent.
+- **Google's maintained smali/dexlib2** for structured DEX inspection or binary-level edits only when working with an APK that has no usable source code.
+- **Apktool** when Android resources or the manifest need to be decoded/rebuilt; it is not used as the primary compiler for this source-based project.
+
+JADX is a decompiler, not a lossless source reconstruction tool. The maintained Google smali fork provides DEX assembler/disassembler libraries; binary edits should be made through dexlib2 APIs rather than fragile text substitutions in Smali.
 
 ## Build locally
 
 Open this directory in Android Studio with JDK 17 and Android SDK 35 installed, or run:
 
 ```bash
-gradle :app:assembleDebug
+gradle :app:testDebugUnitTest :app:assembleDebug
 ```
 
 The debug APK is generated at:
@@ -25,22 +40,13 @@ The debug APK is generated at:
 
 ## Weekly GitHub Actions build
 
-The workflow at the repository root, `.github/workflows/weekly-apk.yml`, runs every Monday at 03:17 UTC (08:47 India time). It counts open issues carrying the `bug` label. If there are 10 or more, it runs unit-test and debug-APK build tasks and stores the APK as a 30-day workflow artifact.
+The workflow at the repository root, `.github/workflows/weekly-apk.yml`, runs every Monday at 03:17 UTC (08:47 India time). It counts open issues carrying the `bug` label. If there are 10 or more, it runs unit tests, builds the debug APK, decompiles the APK with JADX, and verifies that device RAM collection code is absent. A manual workflow dispatch also runs the build.
 
-A manual workflow dispatch also runs the build. This automation builds the code; it does not automatically diagnose or repair bugs. AI-assisted repair, test validation, and pull-request creation are separate work still to be implemented. Merges and releases should remain subject to maintainer approval.
-
-## Planned milestones
-
-1. User-triggered diagnostics with explicit Android permission and privacy controls.
-2. Runtime event thresholds and structured diagnostic reports.
-3. Optional HTTPS upload to a user-configured REST endpoint.
-4. AI Bug Intelligence that proposes tested fixes through pull requests.
-5. Separate stable and LTS release branches after those branches are created and validated.
+The workflow uploads the APK as a 30-day artifact. This automation builds and verifies the code; it does not automatically diagnose or repair bugs. AI-assisted repair, test validation, and pull-request creation are separate. Merges and releases should remain subject to maintainer approval.
 
 ## Security and privacy
 
 Android restricts access to other apps' private process memory. This project will use public Android APIs and explicitly authorized diagnostic data. Do not add credentials, API keys, or signing keys to source control.
-
 
 ## AI Bug Intelligence setup
 
@@ -54,11 +60,4 @@ Before using it, add an Actions repository secret named `AI_API_KEY` containing 
 
 Optionally set the repository Actions variable `AI_MODEL`; the default is `gpt-4.1-mini`.
 
-The engine posts an analysis comment when it cannot propose a safe patch. If it proposes a patch, it restricts changes to existing files under this project, runs the unit-test task and debug APK build, then opens a **draft pull request**. It never merges automatically. Review every generated change before approval.
-
-<!-- build-trigger: 2026-11-19 -->
-
-
-## APK / DEX engineering
-
-The app is maintained from Kotlin source, so normal builds compile directly to DEX; there is no reason to round-trip through Smali for this change. For APKs where source is unavailable, use JADX for inspection and Google's maintained `smali-dexlib2` library for structured, programmatic DEX edits without hand-editing Smali text. Use Apktool only when Android resources or manifest decoding/repackaging is required. Any patched APK must be zip-aligned, signed with an authorized key, and verified before installation.
+The engine posts an analysis comment when it cannot propose a safe patch. If it proposes a patch, it restricts changes to existing files under this project, runs the unit-test task and debug APK build, then opens a draft pull request. It never merges automatically. Review every generated change before approval.
