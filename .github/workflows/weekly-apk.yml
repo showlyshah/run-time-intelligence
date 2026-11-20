@@ -80,12 +80,30 @@ jobs:
         run: |
           APK="app/build/outputs/apk/debug/app-debug.apk"
           OUT="$RUNNER_TEMP/jadx-output"
-          "$RUNNER_TEMP/jadx/bin/jadx" --no-res -d "$OUT" "$APK"
-          if grep -R -n -E 'ActivityManager|getMemoryInfo|totalMem|availMem|Total RAM:|Available RAM:|Estimated used RAM:' "$OUT/sources/com/logan/runtimeintelligence"; then
+          # JADX can return exit code 3 when some unrelated/library classes cannot
+          # be fully decompiled. Its output is still usable; require our app's
+          # MainActivity to exist and inspect the entire app package below.
+          JADX_STATUS=0
+          "$RUNNER_TEMP/jadx/bin/jadx" --no-res --show-bad-code -d "$OUT" "$APK" || JADX_STATUS=$?
+          if [ "$JADX_STATUS" -ne 0 ] && [ "$JADX_STATUS" -ne 3 ]; then
+            echo "JADX failed unexpectedly with exit code $JADX_STATUS."
+            exit "$JADX_STATUS"
+          fi
+          APP_SOURCES="$OUT/sources/com/logan/runtimeintelligence"
+          if [ ! -f "$APP_SOURCES/MainActivity.java" ]; then
+            echo "JADX did not produce the app's MainActivity.java; cannot verify the APK."
+            exit 1
+          fi
+          if grep -R -n -E 'ActivityManager|getMemoryInfo|totalMem|availMem|Total RAM:|Available RAM:|Estimated used RAM:' "$APP_SOURCES"; then
             echo "Device-statistics collection code was found in the decompiled app."
             exit 1
           fi
-          echo "JADX decompilation passed: original app package contains no device RAM collection code."
+          if [ "$JADX_STATUS" -eq 3 ]; then
+            echo "JADX reported non-fatal errors in other classes; app package verification succeeded."
+          else
+            echo "JADX decompilation passed."
+          fi
+          echo "Verified: app package contains no device RAM collection code."
 
       - name: Upload debug APK artifact
         if: (github.event_name != 'schedule' || steps.bugs.outputs.count >= 10) && success()
