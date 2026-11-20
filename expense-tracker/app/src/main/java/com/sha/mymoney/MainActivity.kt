@@ -221,7 +221,7 @@ class MainActivity:Activity(){
   val body=ScrollView(this).apply{clipToPadding=false;isFillViewport=false}
   val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
   body.addView(content);root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
-  when(tab){0->records(content);1->analysis(content);2->budgetsPage(content);3->accountsPage(content);4->categoriesPage(content);5->billsPage(content);6->aboutPage(content)}
+  when(tab){0->records(content);1->analysis(content);2->budgetsPage(content);3->accountsPage(content);4->categoriesPage(content);5->billsPage(content);6->aboutPage(content);7->transferHistoryPage(content)}
   val nav=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=rounded(PANEL,20f);setPadding(dp(5),dp(5),dp(5),dp(5))}
   val labels=listOf("📒  Records","📊  Analysis","🎯  Budgets","🏦  Accounts","🎨  Categories","🧾  Bills")
   for(rowIndex in 0..1){
@@ -490,8 +490,35 @@ class MainActivity:Activity(){
  private fun categoriesPage(c:LinearLayout){c.addView(text("Categories",22f,GOLD));c.addView(button("+ Add category"){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)};val e=EditText(this).apply{hint="Category name"};val emoji=EditText(this).apply{hint="Emoji icon (e.g. 🧘 🍕 🐶)";setSingleLine(true);textSize=22f};box.addView(e);box.addView(emoji);AlertDialog.Builder(this).setTitle("New category").setMessage("Choose an emoji to use across transaction lists, category lists and charts.").setView(box).setPositiveButton("Add"){_,_->if(e.text.isNotBlank()){store.addCategory(e.text.toString().trim(),emoji.text.toString().trim());show()}}.setNegativeButton("Cancel",null).show()});store.categories().forEach{n->val p=panel();p.orientation=LinearLayout.HORIZONTAL;p.gravity=Gravity.CENTER_VERTICAL;p.addView(text(categoryIcon(n),24f));p.addView(text(n,16f,COLORS[(store.categories().indexOf(n).coerceAtLeast(0))%COLORS.size]),LinearLayout.LayoutParams(0,-2,1f));p.addView(text("⋮",20f,MUTED));p.setOnLongClickListener{AlertDialog.Builder(this).setMessage("Delete category $n? Existing transactions keep this category label.").setPositiveButton("Delete"){_,_->store.deleteCategory(n);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)}}
 
  private fun exportDialog(){
-  val options=arrayOf("Save PDF summary","Save CSV transaction report","Save FULL restore backup (JSON)","Restore from backup (JSON)","Share summary to Google Keep / Notes")
-  AlertDialog.Builder(this).setTitle("Export & backup").setItems(options){_,which->when(which){0->createExportFile("pdf");1->createExportFile("csv");2->createExportFile("json");3->chooseBackupToRestore();4->shareSummaryNote()}}.setNegativeButton("Cancel",null).show()
+  val options=arrayOf("Export Excel-compatible spreadsheet (CSV)","Save PDF summary","Save CSV transaction report","Save FULL restore backup (JSON)","Import spreadsheet / backup","Import & export history","Share summary to Google Keep / Notes")
+  AlertDialog.Builder(this).setTitle("Import & export").setItems(options){_,which->when(which){0->createExportFile("csv");1->createExportFile("pdf");2->createExportFile("csv");3->createExportFile("json");4->chooseBackupToRestore();5->{tab=7;show()};6->shareSummaryNote()}}.setNegativeButton("Cancel",null).show()
+ }
+ private fun historyDir():File=File(filesDir,"transfer-history").apply{if(!exists())mkdirs()}
+ private fun saveTransferCopy(action:String,format:String,bytes:ByteArray){
+  val stamp=SimpleDateFormat("yyyyMMdd-HHmmss",Locale.US).format(Date())
+  val file=File(historyDir(),"$stamp-$action.$format");file.writeBytes(bytes)
+  val prefs=getSharedPreferences("logantech_transfer_history",MODE_PRIVATE)
+  val items=JSONArray(prefs.getString("items","[]")?:"[]")
+  items.put(JSONObject().put("name",file.name).put("action",action).put("format",format).put("time",System.currentTimeMillis()).put("size",bytes.size))
+  prefs.edit().putString("items",items.toString()).apply()
+ }
+ private fun transferHistoryPage(c:LinearLayout){
+  c.addView(text("IMPORT & EXPORT HISTORY",12f,MUTED))
+  c.addView(text("Each completed import or export keeps a private safety copy in this app's local storage. No broad storage permission is needed.",13f,MUTED))
+  val items=try{JSONArray(getSharedPreferences("logantech_transfer_history",MODE_PRIVATE).getString("items","[]")?:"[]")}catch(_:Exception){JSONArray()}
+  for(i in items.length()-1 downTo 0){
+   val o=items.optJSONObject(i)?:continue;val card=panel()
+   card.addView(text(o.optString("action").uppercase(Locale.ROOT)+" • "+o.optString("format").uppercase(Locale.ROOT),15f,GOLD))
+   card.addView(text(SimpleDateFormat("dd MMM yyyy, hh:mm a",Locale.getDefault()).format(Date(o.optLong("time")))+" • "+o.optLong("size")+" bytes",11f,MUTED))
+   val file=File(historyDir(),o.optString("name"))
+   card.addView(button("Restore this safety copy"){
+    if(!file.exists())Toast.makeText(this,"Safety copy not found",Toast.LENGTH_LONG).show()
+    else try{val raw=file.readText(Charsets.UTF_8);if(raw.trimStart().startsWith("{"))confirmRestore(raw) else confirmLegacyCsvRestore(raw)}catch(e:Exception){Toast.makeText(this,"Could not restore: "+e.message,Toast.LENGTH_LONG).show()}
+   })
+   c.addView(card)
+  }
+  if(items.length()==0)c.addView(text("No transfers recorded yet."))
+  c.addView(button("← Back to Records"){tab=0;show()})
  }
  private fun chooseBackupToRestore(){
   val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type="*/*";addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)}
@@ -556,11 +583,11 @@ class MainActivity:Activity(){
  override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
   super.onActivityResult(requestCode,resultCode,data)
   if(requestCode==710&&resultCode==Activity.RESULT_OK){val uri=data?.data?:return
-   try{val bytes=when(exportFormat){"pdf"->buildSummaryPdf();"json"->store.createBackupJson().toByteArray(Charsets.UTF_8);else->buildTransactionsCsv().toByteArray(Charsets.UTF_8)};contentResolver.openOutputStream(uri)?.use{it.write(bytes)}?:throw java.io.IOException("Could not write selected file");Toast.makeText(this,"LoganTech Expenses Tracker export saved successfully",Toast.LENGTH_LONG).show()}
+   try{val bytes=when(exportFormat){"pdf"->buildSummaryPdf();"json"->store.createBackupJson().toByteArray(Charsets.UTF_8);else->buildExcelCsv().toByteArray(Charsets.UTF_8)};contentResolver.openOutputStream(uri)?.use{it.write(bytes)}?:throw java.io.IOException("Could not write selected file");saveTransferCopy("export",exportFormat,bytes);Toast.makeText(this,"Export saved with a safety copy in History",Toast.LENGTH_LONG).show()}
    catch(e:Exception){Toast.makeText(this,"Export failed: "+e.message,Toast.LENGTH_LONG).show()}
   }
   if(requestCode==712&&resultCode==Activity.RESULT_OK){val uri=data?.data?:return
-   try{val content=contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use{it.readText()}?:throw java.io.IOException("Could not read backup");if(content.trimStart().startsWith("{"))confirmRestore(content) else confirmLegacyCsvRestore(content)}
+   try{val bytes=contentResolver.openInputStream(uri)?.use{it.readBytes()}?:throw java.io.IOException("Could not read backup");val content=bytes.toString(Charsets.UTF_8);saveTransferCopy("import-source","csv",bytes);if(content.trimStart().startsWith("{"))confirmRestore(content) else confirmLegacyCsvRestore(content)}
    catch(e:Exception){Toast.makeText(this,"Could not read backup: "+e.message,Toast.LENGTH_LONG).show()}
   }
  }
@@ -579,6 +606,16 @@ class MainActivity:Activity(){
   store.bills().forEach{b->out.append(b.title).append(" | ").append(money(b.amount)).append(" | ").append(b.dueDate).append(" | ").append(b.frequency).append(" | ").append(b.account).append("\n")}
   out.append("\nTRANSACTIONS\n")
   tx.forEach{t->out.append(t.date).append(" | ").append(t.kind).append(" | ").append(t.category).append(" | ").append(t.title).append(" | ").append(money(t.amount)).append(" | ").append(t.account).append("\n")}
+  return out.toString()
+ }
+ private fun buildExcelCsv():String{
+  val out=StringBuilder("\uFEFFDate,Type,Category,Description,Amount,Account\n")
+  store.all().forEach{t->val fields=listOf(t.date,t.kind,t.category,t.title,String.format(Locale.US,"%.2f",t.amount),t.account);out.append(fields.joinToString(","){ "\"" + it.replace("\"","\"\"") + "\"" }).append("\n")}
+  val grouped=store.all().filter{it.kind=="Expense"}.groupBy{it.category}.mapValues{it.value.sumOf{t->t.amount}}.toList().sortedByDescending{it.second}
+  val total=grouped.sumOf{it.second}
+  out.append("\nCATEGORY PIE CHART DATA\nCategory,Total Expense,Share Percent\n")
+  grouped.forEach{(name,value)->out.append("\"").append(name.replace("\"","\"\"")).append("\",").append(String.format(Locale.US,"%.2f",value)).append(",").append(if(total>0)String.format(Locale.US,"%.2f",value/total*100)else "0").append("\n")}
+  out.append("\nIn Excel: select the Category and Total Expense table, then Insert > Pie Chart. Recreate the chart after editing the data.")
   return out.toString()
  }
  private fun buildTransactionsCsv():String{
