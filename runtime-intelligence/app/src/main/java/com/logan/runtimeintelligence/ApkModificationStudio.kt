@@ -78,7 +78,8 @@ class ApkModificationStudio(private val context: Context) {
     private val root = File(context.filesDir, "apk-modification-studio").apply { mkdirs() }
     private val hostListSources = linkedMapOf(
         "AdAway" to "https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt",
-        "StevenBlack Unified" to "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+        "StevenBlack Unified" to "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+        "Yoyo ad servers" to "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&mimetype=plaintext&useip=0.0.0.0"
     )
 
     fun inspect(source: Uri, progress: (Int, String) -> Unit): ApkStudioResult {
@@ -219,8 +220,8 @@ class ApkModificationStudio(private val context: Context) {
         return signed
     }
 
-    private fun downloadHostLists(progress: (Int, String) -> Unit): Pair<Set<String>, String> {
-        val all = mutableSetOf<String>()
+    private fun downloadHostLists(progress: (Int, String) -> Unit): Pair<Map<String, Set<String>>, String> {
+        val all = mutableMapOf<String, MutableSet<String>>()
         val successful = mutableListOf<String>()
         hostListSources.forEach { (name, address) ->
             runCatching {
@@ -243,7 +244,7 @@ class ApkModificationStudio(private val context: Context) {
                             }.lowercase(Locale.ROOT)
                             if (host.contains('.') && !host.startsWith("www.") && host.length < 254 &&
                                 host.matches(Regex("[a-z0-9.-]+")) && !host.startsWith("-") && !host.endsWith("-")) {
-                                all.add(host)
+                                all.getOrPut(host) { mutableSetOf() }.add(name)
                             }
                         }
                     }
@@ -255,10 +256,10 @@ class ApkModificationStudio(private val context: Context) {
         }
         val status = if (successful.isEmpty()) "Online host lists unavailable; heuristic-only classification"
             else "Updated from ${successful.joinToString(" + ")} • ${all.size} unique blocked domains"
-        return all to status
+        return all.mapValues { it.value.toSet() } to status
     }
 
-    private fun scanUrls(decoded: File, blockedHosts: Set<String>): List<UrlFinding> {
+    private fun scanUrls(decoded: File, blockedHosts: Map<String, Set<String>>): List<UrlFinding> {
         val findings = mutableListOf<UrlFinding>()
         val urlRegex = Regex("https?://[^\\s\\\"'<>]+", RegexOption.IGNORE_CASE)
         val editableExtensions = setOf("xml", "json", "txt", "properties", "html", "htm", "css", "js", "yaml", "yml")
@@ -277,18 +278,19 @@ class ApkModificationStudio(private val context: Context) {
                         val raw = match.value.trimEnd('.', ',', ')', ']', '}')
                         val host = runCatching { java.net.URI(raw).host?.lowercase(Locale.ROOT) }.getOrNull() ?: return@inner
                         val matches = matchingBlockedHosts(host, blockedHosts)
+                        val matchedSources = matches.flatMap { blockedHosts[it].orEmpty() }.distinct()
                         val confidence = when {
-                            matches.isNotEmpty() -> "CONFIRMED"
-                            isAdHeuristic(host) -> "POSSIBLE"
+                            matchedSources.any { it == "AdAway" || it == "Yoyo ad servers" } -> "CONFIRMED"
+                            matchedSources.isNotEmpty() || isAdHeuristic(host) -> "POSSIBLE"
                             else -> "SAFE"
                         }
                         findings.add(
                             UrlFinding(raw, host, decoded.toPath().relativize(path).toString(), index + 1,
                                 when (confidence) {
-                                    "CONFIRMED" -> "Advertising / tracking list match"
-                                    "POSSIBLE" -> "Possible advertising / tracking"
+                                    "CONFIRMED" -> "Ad-server list match"
+                                    "POSSIBLE" -> "Possible ad / tracker or broad blocklist match"
                                     else -> "No ad-list match"
-                                }, ext in editableExtensions, confidence, matches.map { "Ad / tracking host list" })
+                                }, ext in editableExtensions, confidence, matchedSources)
                         )
                     }
                 }
@@ -297,7 +299,7 @@ class ApkModificationStudio(private val context: Context) {
         return findings.distinctBy { "${it.file}:${it.line}:${it.url}" }.take(1500)
     }
 
-    private fun matchingBlockedHosts(host: String, blockedHosts: Set<String>): List<String> {
+    private fun matchingBlockedHosts(host: String, blockedHosts: Map<String, Set<String>>): List<String> {
         val matches = mutableListOf<String>()
         var candidate = host
         while (candidate.contains('.')) {
