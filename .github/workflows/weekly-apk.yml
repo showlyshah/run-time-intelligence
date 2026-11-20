@@ -64,13 +64,15 @@ jobs:
       - name: Run tests and build debug APK
         if: github.event_name != 'schedule' || steps.bugs.outputs.count >= 10
         working-directory: runtime-intelligence
-        run: gradle :app:testDebugUnitTest :app:assembleDebug
+        run: gradle testDebugUnitTest assembleDebug
 
       - name: Upload debug APK artifact
         if: (github.event_name != 'schedule' || steps.bugs.outputs.count >= 10) && success()
         uses: actions/upload-artifact@v4
         with:
           name: runtime-intelligence-debug-apk
-          path: runtime-intelligence/app/build/outputs/apk/debug/*.apk
+          path: |
+            runtime-intelligence/app/build/outputs/apk/debug/*.apk
+            runtime-intelligence/sample-app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
