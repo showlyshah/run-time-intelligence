@@ -159,7 +159,8 @@ class MainActivity:Activity(){
   themeChoice=getSharedPreferences("logantech_ui",MODE_PRIVATE).getInt("theme_choice",0)
   val systemDark=(resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK)==android.content.res.Configuration.UI_MODE_NIGHT_YES
   val dark=if(themeChoice==0)systemDark else themeChoice!=1
-  val accent=when(themeChoice){2->0xFF58A6FF.toInt();3->0xFF38D9A9.toInt();4->0xFFB69CFF.toInt();5->0xFFFFC45E.toInt();6->0xFFFF82A7.toInt();7->0xFF43D6D0.toInt();else->0xFF4D9FFF.toInt()}
+  val themeAccents=intArrayOf(0xFF4D9FFF.toInt(),0xFF4D9FFF.toInt(),0xFF58A6FF.toInt(),0xFF38D9A9.toInt(),0xFFB69CFF.toInt(),0xFFFFC45E.toInt(),0xFFFF82A7.toInt(),0xFF43D6D0.toInt(),0xFFE85D75.toInt(),0xFF6574CD.toInt(),0xFF8BCB88.toInt(),0xFFFF8A5B.toInt(),0xFF9AA4B2.toInt(),0xFF4AB6D8.toInt(),0xFFC27B45.toInt())
+  val accent=themeAccents[themeChoice.coerceIn(0,themeAccents.lastIndex)]
   BG=if(dark)0xFF080E1B.toInt() else 0xFFF2F6FC.toInt()
   PANEL=if(dark)0xFF111D31.toInt() else 0xFFFFFFFF.toInt()
   GOLD=accent
@@ -215,7 +216,7 @@ class MainActivity:Activity(){
  private fun show(){
   root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(BG);setPadding(dp(12),dp(10),dp(12),dp(10))}
   val head=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
-  head.addView(text("₹  LoganTech Expenses Tracker",20f,GOLD),LinearLayout.LayoutParams(0,-2,1f))
+  head.addView(text("Logantech expenses tracker",16f,GOLD).apply{isSingleLine=true;ellipsize=android.text.TextUtils.TruncateAt.END},LinearLayout.LayoutParams(0,-2,1f))
   head.addView(text(if(tab==6)"← BACK" else "ⓘ ABOUT",11f,GOLD).apply{setOnClickListener{tab=if(tab==6)0 else 6;show()}});root.addView(head)
   val body=ScrollView(this).apply{clipToPadding=false;isFillViewport=false}
   val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
@@ -253,11 +254,10 @@ class MainActivity:Activity(){
  }
  private fun aboutPage(c:LinearLayout){
   c.addView(text("ABOUT THIS APP",12f,MUTED))
-  val hero=panel().apply{gravity=Gravity.CENTER;setPadding(dp(20),dp(24),dp(20),dp(24));background=rounded(PANEL,34f,0xFF2C75C7.toInt())}
-  hero.addView(ImageView(this).apply{setImageResource(R.mipmap.ic_money_logo);scaleType=ImageView.ScaleType.CENTER_CROP},LinearLayout.LayoutParams(dp(148),dp(148)))
+  val hero=panel().apply{gravity=Gravity.CENTER;setPadding(dp(20),dp(22),dp(20),dp(22));background=rounded(PANEL,30f,0xFF2C75C7.toInt())}
   hero.addView(text("LOGANTECH",25f,if(BG==0xFFF2F6FC.toInt())0xFF172033.toInt() else Color.WHITE).apply{gravity=Gravity.CENTER;typeface=Typeface.create("sans-serif-black",Typeface.BOLD)})
   hero.addView(text("EXPENSES TRACKER",14f,GOLD).apply{gravity=Gravity.CENTER})
-  hero.addView(text("VIBE CODED BY POWER WIZARD LABZ",16f,0xFF72D6A8.toInt()).apply{gravity=Gravity.CENTER;setPadding(dp(4),dp(22),dp(4),dp(12));typeface=Typeface.create("sans-serif-medium",Typeface.BOLD)})
+  hero.addView(text("VIBE CODED BY POWER WIZARD LABZ",15f,0xFF72D6A8.toInt()).apply{gravity=Gravity.CENTER;setPadding(dp(4),dp(18),dp(4),dp(8));typeface=Typeface.create("sans-serif-medium",Typeface.BOLD)})
   c.addView(hero)
   val details=panel()
   details.addView(text("Your money. Your overview.",18f,GOLD))
@@ -265,22 +265,26 @@ class MainActivity:Activity(){
   val version=try{packageManager.getPackageInfo(packageName,0).versionName?: "Unknown"}catch(_:Exception){"Unknown"}
   details.addView(text("Version  $version",12f,MUTED))
   c.addView(details)
+  c.addView(button("❔  How to use"){showHowToDialog()})
   c.addView(text("APP THEME",12f,MUTED))
   val themePanel=panel()
   themePanel.addView(text("Choose your look",17f,GOLD))
-  val names=listOf("System default","Light","Ocean blue","Emerald","Violet","Amber","Rose","Teal")
+  val names=listOf("System default","Light","Ocean blue","Emerald","Violet","Amber","Rose","Teal","Crimson","Indigo","Mint","Sunset","Graphite","Arctic","Copper")
   val chips=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
-  for(rowStart in listOf(0,4)){
+  var rowStart=0
+  while(rowStart<names.size){
    val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
-   for(i in rowStart until rowStart+4){
+   for(i in rowStart until minOf(rowStart+3,names.size)){
     val selected=themeChoice==i
     val chip=Button(this).apply{text=names[i];textSize=10f;isAllCaps=false;setTextColor(if(selected&&GOLD!=0xFFFFC45E.toInt())Color.WHITE else if(selected)0xFF172033.toInt() else MUTED);background=rounded(if(selected)GOLD else BG,22f);setPadding(dp(2),dp(2),dp(2),dp(2));minHeight=dp(46);expressiveTouch(this);setOnClickListener{getSharedPreferences("logantech_ui",MODE_PRIVATE).edit().putInt("theme_choice",i).apply();applyTheme();show()}}
     row.addView(chip,LinearLayout.LayoutParams(0,dp(48),1f).apply{setMargins(dp(2),dp(3),dp(2),dp(3))})
    }
+   if(names.size-rowStart<3)row.addView(View(this),LinearLayout.LayoutParams(0,dp(48),(3-(names.size-rowStart)).toFloat()))
    chips.addView(row)
+   rowStart+=3
   }
   themePanel.addView(chips)
-  themePanel.addView(text("System default follows your phone's light or dark appearance.",11f,MUTED))
+  themePanel.addView(text("System default follows your phone's light or dark appearance. The other themes use a dark surface with their own accent colour.",11f,MUTED))
   c.addView(themePanel)
   val updates=getSharedPreferences("logantech_updates",MODE_PRIVATE)
   val updatePanel=panel()
@@ -300,7 +304,29 @@ class MainActivity:Activity(){
    Toast.makeText(this,"Checking for updates…",Toast.LENGTH_SHORT).show()
    android.os.Handler(mainLooper).postDelayed({show()},18000)
   })
+  c.addView(View(this),LinearLayout.LayoutParams(1,dp(14)))
   c.addView(button("←  Back to Records"){tab=0;show()})
+ }
+ private fun showHowToDialog(){
+  val scroll=ScrollView(this)
+  val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(8),dp(18),dp(8))}
+  fun section(title:String,body:String){
+   val card=panel()
+   card.addView(text(title,17f,GOLD))
+   card.addView(text(body,13f,MUTED))
+   content.addView(card,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(10)})
+  }
+  section("1. Add income or an expense","Open Records and tap + Add transaction. Enter a description, amount, choose Expense or Income, select a category, account and date, then save. The transaction type controls the calculation; the category is its label. You can tap a record to edit it or long-press to delete it.")
+  section("2. What each category means","Food — groceries, meals, snacks and restaurants. Transport — fuel, public transport, taxi and travel. Shopping — clothes, electronics and personal purchases. Bills — utilities, rent and household payments. Health — medicines, appointments and medical costs. Entertainment — movies, games and leisure. Salary — salary or other income; make sure the transaction type is set to Income. Other — anything that does not fit elsewhere. Categories you create are custom labels; use them consistently. The app does not force a category to be income or expense: the Expense/Income selector decides that.")
+  val custom=store.categories().filter{it !in listOf("Food","Transport","Shopping","Bills","Health","Entertainment","Salary","Other")}
+  if(custom.isNotEmpty())section("Your custom categories",custom.joinToString("\n"){"• "+categoryIcon(it)+"  "+it+" — use this for the purpose you defined when creating it."})
+  section("3. How totals are calculated","Total income = the sum of all saved transactions marked Income. Total expenses = the sum of all saved transactions marked Expense. Current total balance = the opening balances of all accounts + all income − all expenses. These headline totals cover all dates, not just the current month. A transaction is counted once, using its saved amount and type.")
+  section("4. How records are arranged and counted","Records are ordered newest date first. If two transactions share a date, the most recently created one appears first. The transaction count is the number of saved transaction entries, including both income and expenses. Editing changes the existing entry; deleting removes it from totals and counts.")
+  section("5. Analysis and pie chart","Choose Day, Week, Month or Year to filter the analysis period. Only Expense transactions inside that period are included. Spending is grouped by category, each category amount is the sum of its expense entries, and its percentage is category spending ÷ total spending × 100. Categories are arranged from highest spending to lowest. Tap a chart segment to view its transactions.")
+  section("6. Budgets and accounts","A category budget compares that category's Expense transactions within the selected week, month or year against your budget amount. Account balance = that account's opening balance + its Income transactions − its Expense transactions. Moving or editing a transaction can therefore change the relevant account balance.")
+  section("7. Bills and backups","Bills are reminders until you record a payment. Choosing Mark as paid creates an Expense transaction in the selected account and category; recurring bills then move to their next due date. Use Export & backup to save a PDF summary, CSV transaction list or full JSON backup. A full JSON backup includes transactions, categories, accounts, budgets and bills.")
+  scroll.addView(content)
+  AlertDialog.Builder(this).setTitle("How to use LoganTech").setView(scroll).setPositiveButton("Got it",null).show()
  }
  private fun totals(list:List<Tx>,kind:String)=list.filter{it.kind==kind}.sumOf{it.amount}
  private fun records(c:LinearLayout){
