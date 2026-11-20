@@ -37,6 +37,10 @@ class BackgroundWorkService : Service() {
         }
         val message = intent?.getStringExtra(EXTRA_MESSAGE) ?: "Processing APK in background"
         val notification = buildNotification(message)
+        if (intent?.action == ACTION_UPDATE) {
+            notifications.notify(NOTIFICATION_ID, notification)
+            return START_NOT_STICKY
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
@@ -73,6 +77,7 @@ class BackgroundWorkService : Service() {
     companion object {
         const val ACTION_START = "com.logan.runtimeintelligence.action.START_BACKGROUND_WORK"
         const val ACTION_STOP = "com.logan.runtimeintelligence.action.STOP_BACKGROUND_WORK"
+        const val ACTION_UPDATE = "com.logan.runtimeintelligence.action.UPDATE_BACKGROUND_WORK"
         const val EXTRA_MESSAGE = "background_work_message"
         private const val CHANNEL_ID = "runtime_intelligence_background"
         private const val NOTIFICATION_ID = 7314
@@ -87,6 +92,14 @@ class BackgroundWorkService : Service() {
             } else {
                 context.startService(intent)
             }
+        }
+
+        fun update(context: android.content.Context, message: String) {
+            val intent = Intent(context, BackgroundWorkService::class.java).apply {
+                action = ACTION_UPDATE
+                putExtra(EXTRA_MESSAGE, message)
+            }
+            context.startService(intent)
         }
 
         fun stop(context: android.content.Context) {
