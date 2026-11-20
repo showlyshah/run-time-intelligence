@@ -132,63 +132,71 @@ class ApkModificationStudio(private val context: Context) {
     }
 
     fun deepScan(result: ApkStudioResult, progress: (Int, String) -> Unit): List<CodeFinding> {
-        progress(2, "Deep scan: walking decoded DEX / Smali code")
+        progress(2, "Fast deep scan: indexing Smali files")
         val indicators = listOf(
-            "com.google.android.gms.ads.identifier.AdvertisingIdClient" to "Advertising ID API",
-            "com/google/android/gms/ads/identifier/AdvertisingIdClient" to "Advertising ID API (DEX descriptor)",
-            "getAdvertisingIdInfo" to "Advertising ID retrieval method",
-            "AdvertisingIdClient.getAdvertisingIdInfo" to "Advertising ID API call",
-            "com.google.android.gms.ads" to "Google Mobile Ads SDK",
-            "Lcom/google/android/gms/ads/" to "Google Mobile Ads SDK (DEX descriptor)",
-            "com.applovin" to "AppLovin advertising SDK",
-            "Lcom/applovin/" to "AppLovin advertising SDK (DEX descriptor)",
-            "com.unity3d.ads" to "Unity Ads SDK",
-            "Lcom/unity3d/ads/" to "Unity Ads SDK (DEX descriptor)",
-            "com.ironsource" to "ironSource advertising SDK",
-            "Lcom/ironsource/" to "ironSource advertising SDK (DEX descriptor)",
-            "com.facebook.ads" to "Meta Audience Network SDK",
-            "Lcom/facebook/ads/" to "Meta Audience Network SDK (DEX descriptor)",
-            "com.mbridge.msdk" to "Mintegral advertising SDK",
-            "com.vungle" to "Vungle advertising SDK",
-            "com.chartboost" to "Chartboost advertising SDK",
-            "com.startapp" to "StartApp advertising SDK",
-            "com.inmobi" to "InMobi advertising SDK",
-            "google_ad_id" to "Advertising ID key string",
-            "advertising_id" to "Advertising ID key string",
-            "adid" to "Possible advertising identifier key"
+            "AdvertisingIdClient" to "Advertising ID API", "getAdvertisingIdInfo" to "Advertising ID retrieval method",
+            "com/google/android/gms/ads/" to "Google Mobile Ads SDK", "com/applovin/" to "AppLovin advertising SDK",
+            "com/unity3d/ads/" to "Unity Ads SDK", "com/ironsource/" to "ironSource advertising SDK",
+            "com/facebook/ads/" to "Meta Audience Network SDK", "com/mbridge/msdk/" to "Mintegral advertising SDK",
+            "com/vungle/" to "Vungle advertising SDK", "com/chartboost/" to "Chartboost advertising SDK",
+            "com/startapp/" to "StartApp advertising SDK", "com/inmobi/" to "InMobi advertising SDK",
+            "google_ad_id" to "Advertising ID key string", "advertising_id" to "Advertising ID key string",
+            "doubleclick" to "Ad network reference"
         )
+        val base = result.decodedDirectory.toPath()
+        val files = Files.walk(base).use { paths -> paths.filter { Files.isRegularFile(it) && it.toString().endsWith(".smali", true) }.limit(500).toList() }
         val output = mutableListOf<CodeFinding>()
-        val smaliFiles = mutableListOf<java.nio.file.Path>()
-        Files.walk(result.decodedDirectory.toPath()).use { paths ->
-            paths.filter { Files.isRegularFile(it) && it.toString().endsWith(".smali", true) }
-                .forEach { smaliFiles.add(it) }
-        }
+        var bytesRead = 0L
         var scanned = 0
-        smaliFiles.forEach { path ->
+        for (path in files) {
+            if (output.size >= 250 || bytesRead >= 24L * 1024L * 1024L) break
             val file = path.toFile()
-            if (file.length() > 8L * 1024L * 1024L) return@forEach
-            val lines = runCatching { Files.readAllLines(path) }.getOrDefault(emptyList())
-            lines.forEachIndexed { index, line ->
-                indicators.forEach { (needle, label) ->
-                    if (line.contains(needle, ignoreCase = true)) {
-                        output.add(
-                            CodeFinding(
-                                needle, result.decodedDirectory.toPath().relativize(path).toString(),
-                                index + 1, label,
-                                if (label.contains("Advertising ID")) "Review API/identifier use. Android AD_ID permission removal is available as a separately selected manifest change; bytecode is not rewritten automatically."
-                                else "SDK reference detected. Confirm that this code path is an ad feature before changing it."
-                            )
-                        )
+            if (file.length() <= 0L || file.length() > 2L * 1024L * 1024L) continue
+            try {
+                file.bufferedReader(Charsets.UTF_8).use { reader ->
+                    var lineNumber = 0
+                    while (true) {
+                        val line = reader.readLine() ?: break
+                        lineNumber++
+                        bytesRead += line.length.toLong() + 1L
+                        if (bytesRead >= 24L * 1024L * 1024L || output.size >= 250) break
+                        for ((needle, label) in indicators) {
+                            if (line.contains(needle, ignoreCase = true)) {
+                                output.add(CodeFinding(needle, base.relativize(path).toString(), lineNumber, label, "Known ad / identifier indicator. Review this method and its callers before patching."))
+                                if (output.size >= 250) break
+                            }
+                        }
                     }
                 }
-            }
+            } catch (_: Exception) { /* Skip unreadable individual files. */ }
             scanned++
-            if (scanned % 25 == 0) progress((scanned * 80 / smaliFiles.size.coerceAtLeast(1)).coerceIn(5, 90), "Deep scan: $scanned / ${smaliFiles.size} Smali files")
+            if (scanned % 20 == 0) progress((scanned * 95 / files.size.coerceAtLeast(1)).coerceIn(5, 95), "Fast scan: $scanned / ${files.size} files • ${output.size} matches")
         }
-        progress(100, "Deep scan complete • ${output.size} code indicator(s)")
-        return output.distinctBy { "${it.file}:${it.line}:${it.indicator}" }.take(1000)
+        progress(100, "Fast scan complete • $scanned files • ${output.size} indicators")
+        return output.distinctBy { "${it.file}:${it.line}:${it.indicator}" }
     }
 
+    fun listSmaliFiles(result: ApkStudioResult, maxFiles: Int = 300): List<String> {
+        val base = result.decodedDirectory.toPath()
+        return Files.walk(base).use { paths -> paths.filter { Files.isRegularFile(it) && it.toString().endsWith(".smali", true) }.limit(maxFiles.toLong()).map { base.relativize(it).toString() }.toList() }
+    }
+
+    fun saveSmaliPatch(result: ApkStudioResult, relativePath: String, updatedText: String): String {
+        require(relativePath.endsWith(".smali", true)) { "Only Smali files can be patched." }
+        val base = result.decodedDirectory.canonicalFile
+        val target = File(base, relativePath).canonicalFile
+        require(target.toPath().startsWith(base.toPath())) { "Invalid Smali path." }
+        require(target.isFile && target.length() <= 2L * 1024L * 1024L) { "Smali file is missing or exceeds 2 MB." }
+        require(updatedText.length <= 2 * 1024 * 1024) { "Edited Smali file exceeds 2 MB." }
+        require(Regex("(?m)^\\s*\\.class\\s+").containsMatchIn(updatedText)) { "Patch rejected: .class declaration is missing." }
+        require(Regex("(?m)^\\s*\\.super\\s+").containsMatchIn(updatedText)) { "Patch rejected: .super declaration is missing." }
+        val backup = File(target.parentFile, target.name + ".runtime-intelligence.bak")
+        if (!backup.exists()) target.copyTo(backup)
+        val temp = File(target.parentFile, target.name + ".patch.tmp")
+        temp.writeText(updatedText, Charsets.UTF_8)
+        if (!temp.renameTo(target)) { temp.copyTo(target, overwrite = true); temp.delete() }
+        return backup.relativeTo(base).path
+    }
     fun rebuildAndSign(
         result: ApkStudioResult,
         selectedUrls: Set<String>,
