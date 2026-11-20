@@ -587,7 +587,7 @@ class MainActivity:Activity(){
    catch(e:Exception){Toast.makeText(this,"Export failed: "+e.message,Toast.LENGTH_LONG).show()}
   }
   if(requestCode==712&&resultCode==Activity.RESULT_OK){val uri=data?.data?:return
-   try{val bytes=contentResolver.openInputStream(uri)?.use{it.readBytes()}?:throw java.io.IOException("Could not read backup");val content=bytes.toString(Charsets.UTF_8);saveTransferCopy("import-source","csv",bytes);if(content.trimStart().startsWith("{"))confirmRestore(content) else confirmLegacyCsvRestore(content)}
+   try{val bytes=contentResolver.openInputStream(uri)?.use{it.readBytes()}?:throw java.io.IOException("Could not read backup");val content=bytes.toString(Charsets.UTF_8);saveTransferCopy("import-source",if(content.trimStart().startsWith("{"))"json" else "csv",bytes);if(content.trimStart().startsWith("{"))confirmRestore(content) else confirmLegacyCsvRestore(content)}
    catch(e:Exception){Toast.makeText(this,"Could not read backup: "+e.message,Toast.LENGTH_LONG).show()}
   }
  }
