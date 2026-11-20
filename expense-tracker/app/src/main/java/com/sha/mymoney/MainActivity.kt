@@ -239,7 +239,7 @@ class MainActivity:Activity(){
   val checked=updates.getLong("last_check_time",0L)
   updatePanel.addView(text(if(available)"⬆  Update available  •  v$latest" else "✓  No newer version detected",16f,if(available)GOLD else 0xFF72D6A8.toInt()))
   updatePanel.addView(text(if(checked>0)"Last check  •  "+SimpleDateFormat("dd MMM yyyy, hh:mm a",Locale.getDefault()).format(Date(checked)) else "Automatic checks run once a week when internet is available.",11f,MUTED))
-  c.addView(button("↻  Check for updates now"){val constraints=Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();val request=OneTimeWorkRequestBuilder<VersionCheckWorker>().setConstraints(constraints).build();WorkManager.getInstance(applicationContext).enqueueUniqueWork("logantech_manual_version_check",ExistingWorkPolicy.REPLACE,request);Toast.makeText(this,"Checking GitHub for updates…",Toast.LENGTH_SHORT).show();android.os.Handler(mainLooper).postDelayed({show()},4500)})
+  c.addView(button("↻  Check for updates now"){val constraints=Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();val request=OneTimeWorkRequestBuilder<VersionCheckWorker>().setConstraints(constraints).build();WorkManager.getInstance(applicationContext).enqueueUniqueWork("logantech_manual_version_check",ExistingWorkPolicy.REPLACE,request);Toast.makeText(this,"Checking GitHub for updates…",Toast.LENGTH_SHORT).show();android.os.Handler(mainLooper).postDelayed({show()},15000)})
   if(available){
    updatePanel.addView(text(updates.getString("release_notes","")?:"A newer version is available on GitHub.",12f,MUTED))
    c.addView(updatePanel)
