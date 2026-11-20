@@ -191,11 +191,18 @@ class MainActivity : Activity() {
     }
 
     private fun openApkStudioPicker() {
-        val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "application/vnd.android.package-archive"
-        }
-        startActivityForResult(picker, APK_STUDIO_PICK_REQUEST)
+        AlertDialog.Builder(this)
+            .setTitle("Authorised APK modification only")
+            .setMessage("Continue only if you own this app or have permission to modify and redistribute it. The rebuilt APK receives a new Runtime Intelligence signing certificate, so Android will not treat it as an update to the original signed app. Signature checks, licence systems and Play Integrity may stop working.")
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Continue") { _, _ ->
+                val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/vnd.android.package-archive"
+                }
+                startActivityForResult(picker, APK_STUDIO_PICK_REQUEST)
+            }
+            .show()
     }
 
     private fun updateStudioProgress(percent: Int, message: String) {
