@@ -19,6 +19,7 @@ import android.provider.Settings
 import android.net.Uri
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.EditText
 import android.graphics.Color
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -64,7 +65,7 @@ class MainActivity : Activity() {
             startActivityForResult(picker, APK_PICK_REQUEST)
         })
         content.addView(sectionTitle("APK Modification Studio"))
-        content.addView(infoText("For APKs you own or are authorised to modify. Decode resources and DEX-derived Smali, check host reputation lists online, review each URL and permission individually, run a deeper advertising SDK / Advertising ID scan, then rebuild and sign only your selected changes."))
+        content.addView(infoText("For APKs you own or are authorised to modify. Decode resources and DEX-derived Smali, check host reputation lists online, review each URL and permission individually, run a bounded fast advertising SDK / Advertising ID scan, edit selected Smali files with backups, then rebuild and sign your changes."))
         content.addView(actionButton("Import APK • decompile and scan URLs") { openApkStudioPicker() })
         studioProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progress = 0 }
         studioProgressText = TextView(this).apply { text = "Studio idle • no APK loaded"; textSize = 13f; setPadding(0, 4, 0, 12) }
@@ -281,6 +282,9 @@ class MainActivity : Activity() {
         }
         if (result.permissions.isEmpty()) panel.addView(infoText("No requested permissions were found in the decoded manifest."))
 
+        panel.addView(actionButton("Smali Patcher • browse and edit selected files") {
+            showSmaliPatcher(studio, result)
+        })
         panel.addView(actionButton("Run Deep Scan • DEX / Smali advertising indicators") {
             updateStudioProgress(79, "Running deeper DEX / Smali scan")
             Thread {
@@ -317,6 +321,61 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
+    private fun showSmaliPatcher(studio: ApkModificationStudio, result: ApkStudioResult) {
+        updateStudioProgress(5, "Loading Smali file index")
+        Thread {
+            try {
+                val files = studio.listSmaliFiles(result)
+                runOnUiThread {
+                    if (files.isEmpty()) {
+                        AlertDialog.Builder(this).setMessage("No decoded Smali files were found.").setPositiveButton("OK", null).show()
+                    } else {
+                        AlertDialog.Builder(this)
+                            .setTitle("Select a Smali file • ${files.size} shown (max 300)")
+                            .setItems(files.toTypedArray()) { _, which -> editSmaliFile(studio, result, files[which]) }
+                            .setNegativeButton("Close", null)
+                            .show()
+                    }
+                }
+            } catch (error: Exception) { updateStudioProgress(0, "Smali index failed: ${error.message ?: error.javaClass.simpleName}") }
+        }.start()
+    }
+
+    private fun editSmaliFile(studio: ApkModificationStudio, result: ApkStudioResult, relativePath: String) {
+        try {
+            val base = result.decodedDirectory.canonicalFile
+            val file = java.io.File(base, relativePath).canonicalFile
+            require(file.toPath().startsWith(base.toPath()) && file.isFile && file.length() <= 2L * 1024L * 1024L) { "Selected Smali file is unavailable or too large." }
+            val editor = EditText(this).apply {
+                setText(file.readText(Charsets.UTF_8))
+                textSize = 12f
+                typeface = android.graphics.Typeface.MONOSPACE
+                setPadding(24, 16, 24, 16)
+                minLines = 12
+                maxLines = 28
+                gravity = android.view.Gravity.TOP
+                isSingleLine = false
+            }
+            val scroll = ScrollView(this).apply { addView(editor) }
+            AlertDialog.Builder(this)
+                .setTitle("Patch Smali • $relativePath")
+                .setMessage("Edit only the selected class. A one-time backup is retained. The patch is included in the next rebuild.")
+                .setView(scroll)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save patch") { _, _ ->
+                    try {
+                        val backup = studio.saveSmaliPatch(result, relativePath, editor.text.toString())
+                        updateStudioProgress(0, "Smali patch saved • backup: $backup")
+                        AlertDialog.Builder(this).setMessage("Patch saved. The original file backup is retained. Rebuild the APK to compile this change.").setPositiveButton("OK", null).show()
+                    } catch (error: Exception) {
+                        AlertDialog.Builder(this).setTitle("Patch rejected").setMessage(error.message ?: "Invalid Smali patch").setPositiveButton("OK", null).show()
+                    }
+                }
+                .show()
+        } catch (error: Exception) {
+            AlertDialog.Builder(this).setMessage(error.message ?: "Unable to open Smali file").setPositiveButton("OK", null).show()
+        }
+    }
     private fun permissionRisk(name: String): Pair<String, Int> {
         val highRisk = setOf(
             "android.permission.CAMERA", "android.permission.RECORD_AUDIO",
