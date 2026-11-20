@@ -118,7 +118,7 @@ class MainActivity:Activity(){
   if(alerts.isNotEmpty()){
    val warning=panel()
    warning.addView(text("⚠  BUDGET WATCH",12f,0xFFFFB86B.toInt()))
-   alerts.take(3).forEach{warning.addView(text(it,13f,if((it.substringAfterLast(" ").removeSuffix("%").toIntOrNull()?:0)>=100)0xFFFF8A8A.toInt() else MUTED))}
+   alerts.take(3).forEach{warning.addView(text(it,13f,0xFFFFC27A.toInt()))}
    c.addView(warning)
   }
   val actions=LinearLayout(this).apply{gravity=Gravity.CENTER}
@@ -131,7 +131,7 @@ class MainActivity:Activity(){
   val backupStatus=panel()
   backupStatus.addView(text("🔄 AUTOMATIC BACKUP",11f,MUTED))
   backupStatus.addView(text(if(last>0)"Last successful backup  •  "+SimpleDateFormat("dd MMM yyyy, hh:mm a",Locale.getDefault()).format(Date(last)) else "First automatic backup is scheduled; it runs about every 30 days.",13f,if(last>0)0xFF72D6A8.toInt() else MUTED))
-  if(prefs.getString("backup_state","")=="retrying")backupStatus.addView(text("Previous attempt needs a retry. Your data remains on this device.",11f,0xFFFFB86B.toInt()))
+  if(prefs.getString("backup_state","")=="retrying")backupStatus.addView(text("Backup will retry automatically. Your data remains on this device.",11f,0xFFFFB86B.toInt()))
   c.addView(backupStatus)
   c.addView(text("Recent transactions",19f,GOLD))
   val search=EditText(this).apply{hint="Search title, category, account or date";setSingleLine(true);textSize=14f;setTextColor(Color.WHITE);setHintTextColor(MUTED);setPadding(dp(14),dp(10),dp(14),dp(10));background=rounded(PANEL,14f)}
