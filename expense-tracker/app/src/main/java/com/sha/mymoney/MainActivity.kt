@@ -34,11 +34,11 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
-private const val BG = 0xFF101827.toInt()
-private const val PANEL = 0xFF1D2A3D.toInt()
-private const val GOLD = 0xFFFFC857.toInt()
-private const val MUTED = 0xFFB7C5D8.toInt()
-private val COLORS = intArrayOf(0xFFFF6B6B.toInt(),0xFF4ECDC4.toInt(),0xFF6C8CFF.toInt(),0xFFFFB84D.toInt(),0xFFC084FC.toInt(),0xFF7BD88F.toInt(),0xFFFF7AC6.toInt(),0xFF5CC8FF.toInt(),0xFFA3E635.toInt(),0xFFFF8A5B.toInt())
+private var BG = 0xFF080E1B.toInt()
+private var PANEL = 0xFF111D31.toInt()
+private var GOLD = 0xFF4D9FFF.toInt()
+private var MUTED = 0xFF9CB2CE.toInt()
+private var COLORS = intArrayOf(0xFF4D9FFF.toInt(),0xFF37C7F4.toInt(),0xFF8B9BFF.toInt(),0xFF54D6B0.toInt(),0xFFFFC857.toInt(),0xFFB58BFF.toInt(),0xFFFF7AA8.toInt(),0xFF66D9E8.toInt(),0xFF9AD86B.toInt(),0xFFFF9A65.toInt())
 private val CUSTOM_CATEGORY_ICONS=mutableMapOf<String,String>()
 private fun categoryIcon(name:String):String=CUSTOM_CATEGORY_ICONS[name]?.takeIf{it.isNotBlank()}?:when(name.lowercase(Locale.ROOT)){"food","groceries","restaurant"->"🍔";"transport","travel","fuel"->"🚗";"shopping","clothes"->"🛍️";"bills","utilities","rent"->"🧾";"health","medical"->"💊";"entertainment","movies"->"🎬";"salary","income"->"💰";"education"->"📚";"home"->"🏠";"subscriptions"->"📱";"cash"->"💵";"bank"->"🏦";"savings"->"🐷";else->"✨"}
 
@@ -151,6 +151,18 @@ class MainActivity:Activity(){
  private var period="Month"
  private var chosenCategory:String?=null
  private var exportFormat="pdf"
+ private var themeChoice=0
+ private fun applyTheme(){
+  themeChoice=getSharedPreferences("logantech_ui",MODE_PRIVATE).getInt("theme_choice",0)
+  val systemDark=(resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK)==android.content.res.Configuration.UI_MODE_NIGHT_YES
+  val dark=if(themeChoice==0)systemDark else themeChoice!=1
+  val accent=when(themeChoice){2->0xFF58A6FF.toInt();3->0xFF38D9A9.toInt();4->0xFFB69CFF.toInt();5->0xFFFFC45E.toInt();6->0xFFFF82A7.toInt();7->0xFF43D6D0.toInt();else->0xFF4D9FFF.toInt()}
+  BG=if(dark)0xFF080E1B.toInt() else 0xFFF2F6FC.toInt()
+  PANEL=if(dark)0xFF111D31.toInt() else 0xFFFFFFFF.toInt()
+  GOLD=accent
+  MUTED=if(dark)0xFF9CB2CE.toInt() else 0xFF53647A.toInt()
+  COLORS=intArrayOf(accent,0xFF37C7F4.toInt(),0xFF8B9BFF.toInt(),0xFF54D6B0.toInt(),0xFFFFC857.toInt(),0xFFB58BFF.toInt(),0xFFFF7AA8.toInt(),0xFF66D9E8.toInt(),0xFF9AD86B.toInt(),0xFFFF9A65.toInt())
+ }
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
  private fun text(s:String,size:Float=15f,color:Int=Color.WHITE):TextView=TextView(this).apply{text=s;textSize=size;setTextColor(color);setPadding(dp(12),dp(9),dp(12),dp(9));typeface=if(size>=19f)Typeface.create("sans-serif-medium",Typeface.NORMAL) else Typeface.create("sans-serif",Typeface.NORMAL)}
  private fun rounded(color:Int,radius:Float=18f,stroke:Int=0):android.graphics.drawable.GradientDrawable=android.graphics.drawable.GradientDrawable().apply{setColor(color);cornerRadius=dp(radius.toInt()).toFloat();if(stroke!=0)setStroke(dp(1),stroke)}
@@ -158,7 +170,7 @@ class MainActivity:Activity(){
  private fun panel():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(8),dp(10),dp(8));background=rounded(PANEL,18f,0xFF34465F.toInt())}
  private fun money(v:Double)="₹"+String.format(Locale("en","IN"),"%.2f",v)
  private fun dateNow()=SimpleDateFormat("yyyy-MM-dd",Locale.US).format(Date())
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);store=Store(this);store.categories();if(intent.getBooleanExtra("open_about",false))tab=6;scheduleMonthlyBackup();scheduleBillReminders();scheduleVersionChecks();showUpdateNotificationIfAvailable();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),711);window.statusBarColor=BG;window.navigationBarColor=BG;@Suppress("DEPRECATION") window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;show()}
+ override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);applyTheme();store=Store(this);store.categories();if(intent.getBooleanExtra("open_about",false))tab=6;scheduleMonthlyBackup();scheduleBillReminders();scheduleVersionChecks();showUpdateNotificationIfAvailable();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),711);window.statusBarColor=BG;window.navigationBarColor=BG;@Suppress("DEPRECATION") window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;show()}
  private fun scheduleVersionChecks(){
   val constraints=Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
   val periodic=PeriodicWorkRequestBuilder<VersionCheckWorker>(7,TimeUnit.DAYS).setConstraints(constraints).build()
@@ -174,7 +186,7 @@ class MainActivity:Activity(){
   if(Build.VERSION.SDK_INT>=26)manager.createNotificationChannel(NotificationChannel(channel,"App updates",NotificationManager.IMPORTANCE_LOW).apply{description="Notifications when a newer LoganTech app version is available"})
   val open=Intent(this,MainActivity::class.java).apply{flags=Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP;putExtra("open_about",true)}
   val pending=PendingIntent.getActivity(this,731,open,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-  val notification=Notification.Builder(this,channel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("LoganTech update available").setContentText("Version $version is ready to view on GitHub").setContentIntent(pending).setAutoCancel(true).setTimeoutAfter(3000).build()
+  val notification=Notification.Builder(this,channel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("LoganTech update available").setContentText("Version $version is being downloaded to your Downloads folder").setContentIntent(pending).setAutoCancel(true).setTimeoutAfter(3000).build()
   manager.notify(731,notification)
  }
  private fun scheduleMonthlyBackup(){val request=PeriodicWorkRequestBuilder<MonthlyBackupWorker>(30,TimeUnit.DAYS).build();WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork("mymoney_monthly_backup",ExistingPeriodicWorkPolicy.KEEP,request)}
@@ -218,12 +230,11 @@ class MainActivity:Activity(){
  }
  private fun aboutPage(c:LinearLayout){
   c.addView(text("ABOUT THIS APP",12f,MUTED))
-  val hero=panel().apply{gravity=Gravity.CENTER;setPadding(dp(20),dp(34),dp(20),dp(34))}
-  hero.addView(text("₹",48f,GOLD).apply{gravity=Gravity.CENTER;background=rounded(0xFF34445B.toInt(),60f);setPadding(dp(18),dp(10),dp(18),dp(10))})
+  val hero=panel().apply{gravity=Gravity.CENTER;setPadding(dp(20),dp(24),dp(20),dp(24))}
+  hero.addView(text("◉",44f,GOLD).apply{gravity=Gravity.CENTER;background=rounded(0xFF101D33.toInt(),60f);setPadding(dp(18),dp(10),dp(18),dp(10))})
   hero.addView(text("LOGANTECH",25f,Color.WHITE).apply{gravity=Gravity.CENTER;typeface=Typeface.create("sans-serif-black",Typeface.BOLD)})
   hero.addView(text("EXPENSES TRACKER",14f,GOLD).apply{gravity=Gravity.CENTER})
-  val credit=text("VIBE CODED BY POWER WIZARD LABZ",16f,0xFF72D6A8.toInt()).apply{gravity=Gravity.CENTER;setPadding(dp(4),dp(22),dp(4),dp(12));typeface=Typeface.create("sans-serif-medium",Typeface.BOLD)}
-  hero.addView(credit)
+  hero.addView(text("VIBE CODED BY POWER WIZARD LABZ",16f,0xFF72D6A8.toInt()).apply{gravity=Gravity.CENTER;setPadding(dp(4),dp(22),dp(4),dp(12));typeface=Typeface.create("sans-serif-medium",Typeface.BOLD)})
   c.addView(hero)
   val details=panel()
   details.addView(text("Your money. Your overview.",18f,GOLD))
@@ -231,20 +242,41 @@ class MainActivity:Activity(){
   val version=try{packageManager.getPackageInfo(packageName,0).versionName?: "Unknown"}catch(_:Exception){"Unknown"}
   details.addView(text("Version  $version",12f,MUTED))
   c.addView(details)
+  c.addView(text("APP THEME",12f,MUTED))
+  val themePanel=panel()
+  themePanel.addView(text("Choose your look",17f,GOLD))
+  val names=listOf("System default","Light","Ocean blue","Emerald","Violet","Amber","Rose","Teal")
+  val chips=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+  for(rowStart in listOf(0,4)){
+   val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
+   for(i in rowStart until rowStart+4){
+    val selected=themeChoice==i
+    val chip=Button(this).apply{text=names[i];textSize=10f;isAllCaps=false;setTextColor(if(selected)Color.WHITE else MUTED);background=rounded(if(selected)GOLD else BG,13f);setPadding(dp(2),dp(2),dp(2),dp(2));minHeight=dp(46);setOnClickListener{getSharedPreferences("logantech_ui",MODE_PRIVATE).edit().putInt("theme_choice",i).apply();applyTheme();show()}}
+    row.addView(chip,LinearLayout.LayoutParams(0,dp(48),1f).apply{setMargins(dp(2),dp(3),dp(2),dp(3))})
+   }
+   chips.addView(row)
+  }
+  themePanel.addView(chips)
+  themePanel.addView(text("System default follows your phone's light or dark appearance.",11f,MUTED))
+  c.addView(themePanel)
   val updates=getSharedPreferences("logantech_updates",MODE_PRIVATE)
   val updatePanel=panel()
-  updatePanel.addView(text("GITHUB VERSION CHECK",11f,MUTED))
+  updatePanel.addView(text("APP UPDATES",11f,MUTED))
   val available=updates.getBoolean("update_available",false)
   val latest=updates.getString("latest_version","")?:""
   val checked=updates.getLong("last_check_time",0L)
-  updatePanel.addView(text(if(available)"⬆  Update available  •  v$latest" else "✓  No newer version detected",16f,if(available)GOLD else 0xFF72D6A8.toInt()))
-  updatePanel.addView(text(if(checked>0)"Last check  •  "+SimpleDateFormat("dd MMM yyyy, hh:mm a",Locale.getDefault()).format(Date(checked)) else "Automatic checks run once a week when internet is available.",11f,MUTED))
-  c.addView(button("↻  Check for updates now"){val constraints=Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();val request=OneTimeWorkRequestBuilder<VersionCheckWorker>().setConstraints(constraints).build();WorkManager.getInstance(applicationContext).enqueueUniqueWork("logantech_manual_version_check",ExistingWorkPolicy.REPLACE,request);Toast.makeText(this,"Checking GitHub for updates…",Toast.LENGTH_SHORT).show();android.os.Handler(mainLooper).postDelayed({show()},15000)})
-  if(available){
-   updatePanel.addView(text(updates.getString("release_notes","")?:"A newer version is available on GitHub.",12f,MUTED))
-   c.addView(updatePanel)
-   c.addView(button("⬇  View v$latest on GitHub"){val url=updates.getString("latest_url","https://github.com/showlyshah/run-time-intelligence/releases/latest")?:"https://github.com/showlyshah/run-time-intelligence/releases/latest";try{startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse(url)))}catch(e:Exception){Toast.makeText(this,"Could not open GitHub release",Toast.LENGTH_SHORT).show()}})
-  }else c.addView(updatePanel)
+  val status=updates.getString("download_status","")?:""
+  updatePanel.addView(text(if(available)"⬇  Update found • v$latest" else "✓  No newer version detected",16f,if(available)GOLD else 0xFF72D6A8.toInt()))
+  if(status.isNotBlank())updatePanel.addView(text(status,12f,MUTED))
+  updatePanel.addView(text(if(checked>0)"Last checked • "+SimpleDateFormat("dd MMM yyyy, hh:mm a",Locale.getDefault()).format(Date(checked)) else "Automatic update checks run once a week when internet is available.",11f,MUTED))
+  c.addView(updatePanel)
+  c.addView(button("↻  Check update"){
+   val constraints=Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+   val request=OneTimeWorkRequestBuilder<VersionCheckWorker>().setConstraints(constraints).build()
+   WorkManager.getInstance(applicationContext).enqueueUniqueWork("logantech_manual_version_check",ExistingWorkPolicy.REPLACE,request)
+   Toast.makeText(this,"Checking for updates…",Toast.LENGTH_SHORT).show()
+   android.os.Handler(mainLooper).postDelayed({show()},18000)
+  })
   c.addView(button("←  Back to Records"){tab=0;show()})
  }
  private fun totals(list:List<Tx>,kind:String)=list.filter{it.kind==kind}.sumOf{it.amount}
@@ -535,22 +567,38 @@ class VersionCheckWorker(context:android.content.Context,params:androidx.work.Wo
   var connection:HttpURLConnection?=null
   return try{
    connection=(URL("https://api.github.com/repos/showlyshah/run-time-intelligence/releases/latest").openConnection() as HttpURLConnection).apply{
-    requestMethod="GET";connectTimeout=12000;readTimeout=12000
+    requestMethod="GET";connectTimeout=15000;readTimeout=15000
     setRequestProperty("Accept","application/vnd.github+json")
     setRequestProperty("User-Agent","LoganTech-Expenses-Tracker-Android")
    }
    if(connection.responseCode!=200)return androidx.work.ListenableWorker.Result.retry()
-   val json=connection.inputStream.bufferedReader(Charsets.UTF_8).use{it.readText()}
-   val release=JSONObject(json)
+   val release=JSONObject(connection.inputStream.bufferedReader(Charsets.UTF_8).use{it.readText()})
    val latest=release.optString("tag_name","").removePrefix("v").removePrefix("V").trim()
-   val url=release.optString("html_url","https://github.com/showlyshah/run-time-intelligence/releases/latest")
    if(latest.isBlank())return androidx.work.ListenableWorker.Result.retry()
+   val assets=release.optJSONArray("assets")?:JSONArray()
+   var apkUrl=""
+   for(i in 0 until assets.length()){val asset=assets.optJSONObject(i)?:continue;val name=asset.optString("name","");if(name.endsWith(".apk",true)){apkUrl=asset.optString("browser_download_url","");if(apkUrl.isNotBlank())break}}
    val current=try{applicationContext.packageManager.getPackageInfo(applicationContext.packageName,0).versionName?:"0.0.0"}catch(_:Exception){"0.0.0"}
    val newer=compareVersions(latest,current)>0
-   val body=release.optString("body","").trim().take(450)
-   applicationContext.getSharedPreferences("logantech_updates",0).edit()
-    .putBoolean("update_available",newer).putString("latest_version",latest).putString("latest_url",url)
-    .putString("release_notes",body).putLong("last_check_time",System.currentTimeMillis()).apply()
+   val prefs=applicationContext.getSharedPreferences("logantech_updates",0)
+   val editor=prefs.edit().putBoolean("update_available",newer).putString("latest_version",latest).putString("release_notes",release.optString("body","").trim().take(450)).putLong("last_check_time",System.currentTimeMillis())
+   if(newer&&apkUrl.isNotBlank()){
+    val downloaded=prefs.getString("downloaded_version","")?:""
+    if(downloaded!=latest){
+     val request=DownloadManager.Request(android.net.Uri.parse(apkUrl))
+      .setTitle("LoganTech Expenses Tracker v$latest")
+      .setDescription("Downloading app update")
+      .setMimeType("application/vnd.android.package-archive")
+      .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+      .setAllowedOverMetered(true).setAllowedOverRoaming(false)
+      .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS,"LoganTechExpenses-v$latest.apk")
+     val manager=applicationContext.getSystemService(android.content.Context.DOWNLOAD_SERVICE) as DownloadManager
+     val id=manager.enqueue(request)
+     editor.putLong("download_id",id).putString("downloaded_version",latest).putString("download_status","Download started. Find the APK in Downloads when complete.")
+    }else editor.putString("download_status","This update has already been downloaded.")
+   }else if(newer)editor.putString("download_status","Update found, but this release has no APK file attached.")
+   else editor.putString("download_status","You're using the latest available version.")
+   editor.apply()
    androidx.work.ListenableWorker.Result.success()
   }catch(_:Exception){androidx.work.ListenableWorker.Result.retry()}
   finally{connection?.disconnect()}
