@@ -109,14 +109,16 @@ class DiagnosticsEngine(private val context: Context) {
         )
     }
 
-    private fun usageFor(packageName: String): Pair<Long, Long>? = runCatching {
-        val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val end = System.currentTimeMillis()
-        val begin = end - TimeUnit.HOURS.toMillis(24)
-        val entry = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, begin, end)
-            .firstOrNull { it.packageName == packageName } ?: return null
-        entry.totalTimeInForeground to entry.lastTimeUsed
-    }.getOrNull()
+    private fun usageFor(packageName: String): Pair<Long, Long>? {
+        return runCatching {
+            val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+            val end = System.currentTimeMillis()
+            val begin = end - TimeUnit.HOURS.toMillis(24)
+            val entry = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, begin, end)
+                .firstOrNull { it.packageName == packageName } ?: return@runCatching null
+            entry.totalTimeInForeground to entry.lastTimeUsed
+        }.getOrNull()
+    }
 
     private fun rootAvailable(): Boolean = runCatching {
         val p = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
