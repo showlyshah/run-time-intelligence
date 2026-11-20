@@ -24,3 +24,7 @@ android {
         jvmTarget = "17"
     }
 }
+
+dependencies {
+    debugImplementation(project(":debug-sdk"))
+}
