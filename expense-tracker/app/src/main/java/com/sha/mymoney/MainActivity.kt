@@ -39,17 +39,18 @@ private const val PANEL = 0xFF1D2A3D.toInt()
 private const val GOLD = 0xFFFFC857.toInt()
 private const val MUTED = 0xFFB7C5D8.toInt()
 private val COLORS = intArrayOf(0xFFFF6B6B.toInt(),0xFF4ECDC4.toInt(),0xFF6C8CFF.toInt(),0xFFFFB84D.toInt(),0xFFC084FC.toInt(),0xFF7BD88F.toInt(),0xFFFF7AC6.toInt(),0xFF5CC8FF.toInt(),0xFFA3E635.toInt(),0xFFFF8A5B.toInt())
-private fun categoryIcon(name:String):String=when(name.lowercase(Locale.ROOT)){"food","groceries","restaurant"->"🍔";"transport","travel","fuel"->"🚗";"shopping","clothes"->"🛍️";"bills","utilities","rent"->"🧾";"health","medical"->"💊";"entertainment","movies"->"🎬";"salary","income"->"💰";"education"->"📚";"home"->"🏠";"subscriptions"->"📱";"cash"->"💵";"bank"->"🏦";"savings"->"🐷";else->"✨"}
+private val CUSTOM_CATEGORY_ICONS=mutableMapOf<String,String>()
+private fun categoryIcon(name:String):String=CUSTOM_CATEGORY_ICONS[name]?.takeIf{it.isNotBlank()}?:when(name.lowercase(Locale.ROOT)){"food","groceries","restaurant"->"🍔";"transport","travel","fuel"->"🚗";"shopping","clothes"->"🛍️";"bills","utilities","rent"->"🧾";"health","medical"->"💊";"entertainment","movies"->"🎬";"salary","income"->"💰";"education"->"📚";"home"->"🏠";"subscriptions"->"📱";"cash"->"💵";"bank"->"🏦";"savings"->"🐷";else->"✨"}
 
 data class Tx(val id:Long,val title:String,val amount:Double,val kind:String,val category:String,val date:String,val account:String)
 data class Budget(val id:Long,val category:String,val amount:Double,val period:String)
 data class Account(val id:Long,val name:String,val opening:Double)
 data class Bill(val id:Long,val title:String,val amount:Double,val category:String,val dueDate:String,val frequency:String,val account:String)
 
-class Store(c:android.content.Context):SQLiteOpenHelper(c,"mymoney.db",null,4) {
+class Store(c:android.content.Context):SQLiteOpenHelper(c,"mymoney.db",null,5) {
  override fun onCreate(db:SQLiteDatabase) {
   db.execSQL("CREATE TABLE tx(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,amount REAL,kind TEXT,category TEXT,date TEXT,account TEXT DEFAULT 'Cash')")
-  db.execSQL("CREATE TABLE categories(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,kind TEXT DEFAULT 'Both')")
+  db.execSQL("CREATE TABLE categories(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,kind TEXT DEFAULT 'Both',icon TEXT DEFAULT '')")
   db.execSQL("CREATE TABLE accounts(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,opening REAL DEFAULT 0)")
   db.execSQL("CREATE TABLE budgets(id INTEGER PRIMARY KEY AUTOINCREMENT,category TEXT UNIQUE,amount REAL,period TEXT DEFAULT 'Month')")
   db.execSQL("CREATE TABLE bills(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,amount REAL,category TEXT,dueDate TEXT,frequency TEXT,account TEXT)")
@@ -63,12 +64,13 @@ class Store(c:android.content.Context):SQLiteOpenHelper(c,"mymoney.db",null,4) {
   if(old<2){try{db.execSQL("ALTER TABLE tx ADD COLUMN account TEXT DEFAULT 'Cash'")}catch(_:Exception){}}
   if(old<3){db.execSQL("CREATE TABLE IF NOT EXISTS categories(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,kind TEXT DEFAULT 'Both')");db.execSQL("CREATE TABLE IF NOT EXISTS accounts(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,opening REAL DEFAULT 0)");db.execSQL("CREATE TABLE IF NOT EXISTS budgets(id INTEGER PRIMARY KEY AUTOINCREMENT,category TEXT UNIQUE,amount REAL,period TEXT DEFAULT 'Month')");seed(db)}
   if(old<4){db.execSQL("CREATE TABLE IF NOT EXISTS bills(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,amount REAL,category TEXT,dueDate TEXT,frequency TEXT,account TEXT)")}
+  if(old<5){try{db.execSQL("ALTER TABLE categories ADD COLUMN icon TEXT DEFAULT ''")}catch(_:Exception){}}
  }
  fun all():List<Tx>{val a=mutableListOf<Tx>();readableDatabase.rawQuery("SELECT id,title,amount,kind,category,date,COALESCE(account,'Cash') FROM tx ORDER BY date DESC,id DESC",null).use{while(it.moveToNext())a+=Tx(it.getLong(0),it.getString(1),it.getDouble(2),it.getString(3),it.getString(4),it.getString(5),it.getString(6))};return a}
  fun save(t:Tx){if(t.id==0L)writableDatabase.execSQL("INSERT INTO tx(title,amount,kind,category,date,account) VALUES(?,?,?,?,?,?)",arrayOf(t.title,t.amount,t.kind,t.category,t.date,t.account)) else writableDatabase.execSQL("UPDATE tx SET title=?,amount=?,kind=?,category=?,date=?,account=? WHERE id=?",arrayOf(t.title,t.amount,t.kind,t.category,t.date,t.account,t.id))}
  fun remove(id:Long){writableDatabase.delete("tx","id=?",arrayOf(id.toString()))}
- fun categories():List<String>{val a=mutableListOf<String>();readableDatabase.rawQuery("SELECT name FROM categories ORDER BY name",null).use{while(it.moveToNext())a+=it.getString(0)};return a}
- fun addCategory(n:String){writableDatabase.execSQL("INSERT OR IGNORE INTO categories(name,kind) VALUES(?,'Both')",arrayOf(n))}
+ fun categories():List<String>{val a=mutableListOf<String>();CUSTOM_CATEGORY_ICONS.clear();readableDatabase.rawQuery("SELECT name,COALESCE(icon,'') FROM categories ORDER BY name",null).use{while(it.moveToNext()){a+=it.getString(0);val icon=it.getString(1);if(icon.isNotBlank())CUSTOM_CATEGORY_ICONS[it.getString(0)]=icon}};return a}
+ fun addCategory(n:String,icon:String=""){writableDatabase.execSQL("INSERT OR IGNORE INTO categories(name,kind,icon) VALUES(?,'Both',?)",arrayOf(n,icon));if(icon.isNotBlank())CUSTOM_CATEGORY_ICONS[n]=icon}
  fun deleteCategory(n:String){writableDatabase.delete("categories","name=?",arrayOf(n))}
  fun accounts():List<Account>{val a=mutableListOf<Account>();readableDatabase.rawQuery("SELECT id,name,opening FROM accounts ORDER BY name",null).use{while(it.moveToNext())a+=Account(it.getLong(0),it.getString(1),it.getDouble(2))};return a}
  fun saveAccount(id:Long,n:String,v:Double){if(id==0L)writableDatabase.execSQL("INSERT OR IGNORE INTO accounts(name,opening) VALUES(?,?)",arrayOf(n,v)) else {val db=writableDatabase;val oldName=readableDatabase.rawQuery("SELECT name FROM accounts WHERE id=?",arrayOf(id.toString())).use{if(it.moveToFirst())it.getString(0) else null};db.beginTransaction();try{db.execSQL("UPDATE accounts SET name=?,opening=? WHERE id=?",arrayOf(n,v,id));if(oldName!=null&&oldName!=n){db.execSQL("UPDATE tx SET account=? WHERE account=?",arrayOf(n,oldName));db.execSQL("UPDATE bills SET account=? WHERE account=?",arrayOf(n,oldName))};db.setTransactionSuccessful()}finally{db.endTransaction()}}}
@@ -101,7 +103,7 @@ class Store(c:android.content.Context):SQLiteOpenHelper(c,"mymoney.db",null,4) {
   all().forEach{categoryKinds.putIfAbsent(it.category,"Both")}
   bills().forEach{categoryKinds.putIfAbsent(it.category,"Both")}
   budgets().forEach{categoryKinds.putIfAbsent(it.category,"Both")}
-  root.put("categories",JSONArray().apply{categoryKinds.forEach{(name,kind)->put(JSONObject().put("name",name).put("kind",kind))}})
+  root.put("categories",JSONArray().apply{categoryKinds.forEach{(name,kind)->put(JSONObject().put("name",name).put("kind",kind).put("icon",CUSTOM_CATEGORY_ICONS[name]?: ""))}})
   root.put("accounts",JSONArray().apply{accounts().forEach{a->put(JSONObject().put("id",a.id).put("name",a.name).put("opening",a.opening))}})
   root.put("budgets",JSONArray().apply{budgets().forEach{b->put(JSONObject().put("id",b.id).put("category",b.category).put("amount",b.amount).put("period",b.period))}})
   root.put("bills",JSONArray().apply{bills().forEach{b->put(JSONObject().put("id",b.id).put("title",b.title).put("amount",b.amount).put("category",b.category).put("dueDate",b.dueDate).put("frequency",b.frequency).put("account",b.account))}})
@@ -131,7 +133,7 @@ class Store(c:android.content.Context):SQLiteOpenHelper(c,"mymoney.db",null,4) {
   db.beginTransaction()
   try {
    db.delete("tx",null,null);db.delete("categories",null,null);db.delete("accounts",null,null);db.delete("budgets",null,null);db.delete("bills",null,null)
-   for(i in 0 until cats.length()){val o=cats.getJSONObject(i);db.execSQL("INSERT INTO categories(name,kind) VALUES(?,?)",arrayOf(o.getString("name"),o.optString("kind","Both")))}
+   for(i in 0 until cats.length()){val o=cats.getJSONObject(i);db.execSQL("INSERT INTO categories(name,kind,icon) VALUES(?,?,?)",arrayOf(o.getString("name"),o.optString("kind","Both"),o.optString("icon","")))}
    for(i in 0 until accs.length()){val o=accs.getJSONObject(i);db.execSQL("INSERT INTO accounts(id,name,opening) VALUES(?,?,?)",arrayOf(o.getLong("id"),o.getString("name"),o.getDouble("opening")))}
    for(i in 0 until txs.length()){val o=txs.getJSONObject(i);db.execSQL("INSERT INTO tx(id,title,amount,kind,category,date,account) VALUES(?,?,?,?,?,?,?)",arrayOf(o.getLong("id"),o.getString("title"),o.getDouble("amount"),o.getString("kind"),o.getString("category"),o.getString("date"),o.getString("account")))}
    for(i in 0 until buds.length()){val o=buds.getJSONObject(i);db.execSQL("INSERT INTO budgets(id,category,amount,period) VALUES(?,?,?,?)",arrayOf(o.getLong("id"),o.getString("category"),o.getDouble("amount"),o.getString("period")))}
@@ -156,13 +158,11 @@ class MainActivity:Activity(){
  private fun panel():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(8),dp(10),dp(8));background=rounded(PANEL,18f,0xFF34465F.toInt())}
  private fun money(v:Double)="₹"+String.format(Locale("en","IN"),"%.2f",v)
  private fun dateNow()=SimpleDateFormat("yyyy-MM-dd",Locale.US).format(Date())
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);store=Store(this);if(intent.getBooleanExtra("open_about",false))tab=6;scheduleMonthlyBackup();scheduleBillReminders();scheduleVersionChecks();showUpdateNotificationIfAvailable();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),711);window.statusBarColor=BG;window.navigationBarColor=BG;@Suppress("DEPRECATION") window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;show()}
+ override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);store=Store(this);store.categories();if(intent.getBooleanExtra("open_about",false))tab=6;scheduleMonthlyBackup();scheduleBillReminders();scheduleVersionChecks();showUpdateNotificationIfAvailable();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),711);window.statusBarColor=BG;window.navigationBarColor=BG;@Suppress("DEPRECATION") window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;show()}
  private fun scheduleVersionChecks(){
   val constraints=Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-  val periodic=PeriodicWorkRequestBuilder<VersionCheckWorker>(12,TimeUnit.HOURS).setConstraints(constraints).build()
+  val periodic=PeriodicWorkRequestBuilder<VersionCheckWorker>(7,TimeUnit.DAYS).setConstraints(constraints).build()
   WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork("logantech_version_check",ExistingPeriodicWorkPolicy.KEEP,periodic)
-  val immediate=OneTimeWorkRequestBuilder<VersionCheckWorker>().setConstraints(constraints).build()
-  WorkManager.getInstance(applicationContext).enqueueUniqueWork("logantech_version_check_now",ExistingWorkPolicy.KEEP,immediate)
  }
  private fun showUpdateNotificationIfAvailable(){
   val prefs=getSharedPreferences("logantech_updates",MODE_PRIVATE)
@@ -238,7 +238,8 @@ class MainActivity:Activity(){
   val latest=updates.getString("latest_version","")?:""
   val checked=updates.getLong("last_check_time",0L)
   updatePanel.addView(text(if(available)"⬆  Update available  •  v$latest" else "✓  No newer version detected",16f,if(available)GOLD else 0xFF72D6A8.toInt()))
-  updatePanel.addView(text(if(checked>0)"Last background check  •  "+SimpleDateFormat("dd MMM yyyy, hh:mm a",Locale.getDefault()).format(Date(checked)) else "Background checks run about every 12 hours when internet is available.",11f,MUTED))
+  updatePanel.addView(text(if(checked>0)"Last check  •  "+SimpleDateFormat("dd MMM yyyy, hh:mm a",Locale.getDefault()).format(Date(checked)) else "Automatic checks run once a week when internet is available.",11f,MUTED))
+  c.addView(button("↻  Check for updates now"){val constraints=Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();val request=OneTimeWorkRequestBuilder<VersionCheckWorker>().setConstraints(constraints).build();WorkManager.getInstance(applicationContext).enqueueUniqueWork("logantech_manual_version_check",ExistingWorkPolicy.REPLACE,request);Toast.makeText(this,"Checking GitHub for updates…",Toast.LENGTH_SHORT).show();android.os.Handler(mainLooper).postDelayed({show()},4500)})
   if(available){
    updatePanel.addView(text(updates.getString("release_notes","")?:"A newer version is available on GitHub.",12f,MUTED))
    c.addView(updatePanel)
@@ -286,8 +287,7 @@ class MainActivity:Activity(){
   }
   val actions=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(2),dp(4),dp(2),dp(4))}
   val entryRow=LinearLayout(this).apply{gravity=Gravity.CENTER}
-  entryRow.addView(button("＋ Expense"){editTransaction(null,"Expense")},LinearLayout.LayoutParams(0,dp(52),1f).apply{setMargins(0,0,dp(7),0)})
-  entryRow.addView(button("＋ Income"){editTransaction(null,"Income")},LinearLayout.LayoutParams(0,dp(52),1f).apply{setMargins(dp(7),0,0,0)})
+  entryRow.addView(button("＋  Add transaction"){editTransaction(null,"Expense")},LinearLayout.LayoutParams(-1,dp(52)))
   actions.addView(entryRow)
   actions.addView(button("📤  Export & Backup"){exportDialog()},LinearLayout.LayoutParams(-1,dp(50)).apply{topMargin=dp(16)})
   c.addView(actions)
@@ -406,7 +406,7 @@ class MainActivity:Activity(){
  private fun budgetDialog(old:Budget?){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)};val cats=store.categories().filter{it!="Salary"}.ifEmpty{listOf("Other")};val cat=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,cats);setSelection(cats.indexOf(old?.category).coerceAtLeast(0))};val amount=EditText(this).apply{hint="Budget amount";inputType=8194;setText(old?.amount?.toString()?:"")};val period=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,listOf("Month","Week","Year"));setSelection(listOf("Month","Week","Year").indexOf(old?.period?: "Month"))};box.addView(cat);box.addView(amount);box.addView(period);AlertDialog.Builder(this).setTitle("Category budget").setView(box).setPositiveButton("Save"){_,_->val v=amount.text.toString().toDoubleOrNull();if(v!=null&&v>0){store.saveBudget(old?.id?:0L,cat.selectedItem.toString(),v,period.selectedItem.toString());show()}else Toast.makeText(this,"Enter a valid budget",Toast.LENGTH_SHORT).show()}.setNegativeButton("Cancel",null).show()}
  private fun accountsPage(c:LinearLayout){c.addView(text("Accounts",22f,GOLD));c.addView(button("+ Add account"){accountDialog(null)});store.accounts().forEach{a->val balance=a.opening+store.all().filter{it.account==a.name&&it.kind=="Income"}.sumOf{it.amount}-store.all().filter{it.account==a.name&&it.kind=="Expense"}.sumOf{it.amount};val p=panel();p.addView(text(categoryIcon(a.name)+"  "+a.name,17f,GOLD));p.addView(text("Current balance  "+money(balance),15f,GOLD));p.addView(text("Opening balance  "+money(a.opening),12f,MUTED));p.setOnClickListener{accountDialog(a)};p.setOnLongClickListener{if(a.name=="Cash"){Toast.makeText(this,"The default Cash account cannot be deleted",Toast.LENGTH_SHORT).show()}else AlertDialog.Builder(this).setMessage("Delete account? Existing transactions will remain but be assigned to Cash.").setPositiveButton("Delete"){_,_->store.all().filter{it.account==a.name}.forEach{store.save(it.copy(account="Cash"))};store.bills().filter{it.account==a.name}.forEach{store.saveBill(it.copy(account="Cash"))};store.deleteAccount(a.id);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)}}
  private fun accountDialog(old:Account?){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)};val name=EditText(this).apply{hint="Account name";setText(old?.name?:"")};val opening=EditText(this).apply{hint="Opening balance";inputType=8194;setText(old?.opening?.toString()?:"0")};box.addView(name);box.addView(opening);AlertDialog.Builder(this).setTitle(if(old==null)"New account" else "Edit account").setView(box).setPositiveButton("Save"){_,_->val v=opening.text.toString().toDoubleOrNull();if(name.text.isNotBlank()&&v!=null){store.saveAccount(old?.id?:0L,name.text.toString().trim(),v);show()}else Toast.makeText(this,"Enter account name and valid balance",Toast.LENGTH_SHORT).show()}.setNegativeButton("Cancel",null).show()}
- private fun categoriesPage(c:LinearLayout){c.addView(text("Categories",22f,GOLD));c.addView(button("+ Add category"){val e=EditText(this).apply{hint="Category name"};AlertDialog.Builder(this).setTitle("New category").setView(e).setPositiveButton("Add"){_,_->if(e.text.isNotBlank()){store.addCategory(e.text.toString().trim());show()}}.setNegativeButton("Cancel",null).show()});store.categories().forEach{n->val p=panel();p.orientation=LinearLayout.HORIZONTAL;p.gravity=Gravity.CENTER_VERTICAL;p.addView(text(categoryIcon(n),24f));p.addView(text(n,16f,COLORS[(store.categories().indexOf(n).coerceAtLeast(0))%COLORS.size]),LinearLayout.LayoutParams(0,-2,1f));p.addView(text("⋮",20f,MUTED));p.setOnLongClickListener{AlertDialog.Builder(this).setMessage("Delete category $n? Existing transactions keep this category label.").setPositiveButton("Delete"){_,_->store.deleteCategory(n);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)}}
+ private fun categoriesPage(c:LinearLayout){c.addView(text("Categories",22f,GOLD));c.addView(button("+ Add category"){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)};val e=EditText(this).apply{hint="Category name"};val emoji=EditText(this).apply{hint="Emoji icon (e.g. 🧘 🍕 🐶)";setSingleLine(true);textSize=22f};box.addView(e);box.addView(emoji);AlertDialog.Builder(this).setTitle("New category").setMessage("Choose an emoji to use across transaction lists, category lists and charts.").setView(box).setPositiveButton("Add"){_,_->if(e.text.isNotBlank()){store.addCategory(e.text.toString().trim(),emoji.text.toString().trim());show()}}.setNegativeButton("Cancel",null).show()});store.categories().forEach{n->val p=panel();p.orientation=LinearLayout.HORIZONTAL;p.gravity=Gravity.CENTER_VERTICAL;p.addView(text(categoryIcon(n),24f));p.addView(text(n,16f,COLORS[(store.categories().indexOf(n).coerceAtLeast(0))%COLORS.size]),LinearLayout.LayoutParams(0,-2,1f));p.addView(text("⋮",20f,MUTED));p.setOnLongClickListener{AlertDialog.Builder(this).setMessage("Delete category $n? Existing transactions keep this category label.").setPositiveButton("Delete"){_,_->store.deleteCategory(n);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)}}
 
  private fun exportDialog(){
   val options=arrayOf("Save PDF summary","Save CSV transaction report","Save FULL restore backup (JSON)","Restore from backup (JSON)","Share summary to Google Keep / Notes")
