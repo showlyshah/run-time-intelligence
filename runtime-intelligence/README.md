@@ -37,7 +37,7 @@ HTTPS content and session keys remain inaccessible for unrelated apps. For apps 
 
 - Minimum SDK: API 26 (Android 8.0).
 - Compile / target SDK: API 35.
-- The minimum SDK allows installation on Android 8 and later, but each feature depends on APIs, vendor behaviour and user-granted settings. This branch has not yet been build-verified or device-tested.
+- The minimum SDK allows installation on Android 8 and later, but each feature depends on APIs, vendor behaviour and user-granted settings. GitHub Actions run #20 successfully ran unit tests and assembled the debug APK. Physical-device testing across Android versions is still pending.
 - Android 16/17 support should be verified on physical devices and matching emulator images; the app's minSdk does not by itself prove every feature works on every release.
 
 ## Build
