@@ -1,6 +1,9 @@
 package com.sha.mymoney
 
 import android.app.*
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.ContentValues
 import android.provider.MediaStore
 import android.os.Environment
@@ -19,6 +22,8 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 private const val BG = 0xFF101827.toInt()
 private const val PANEL = 0xFF1D2A3D.toInt()
@@ -30,13 +35,15 @@ private fun categoryIcon(name:String):String=when(name.lowercase(Locale.ROOT)){"
 data class Tx(val id:Long,val title:String,val amount:Double,val kind:String,val category:String,val date:String,val account:String)
 data class Budget(val id:Long,val category:String,val amount:Double,val period:String)
 data class Account(val id:Long,val name:String,val opening:Double)
+data class Bill(val id:Long,val title:String,val amount:Double,val category:String,val dueDate:String,val frequency:String,val account:String)
 
-class Store(c:android.content.Context):SQLiteOpenHelper(c,"mymoney.db",null,3) {
+class Store(c:android.content.Context):SQLiteOpenHelper(c,"mymoney.db",null,4) {
  override fun onCreate(db:SQLiteDatabase) {
   db.execSQL("CREATE TABLE tx(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,amount REAL,kind TEXT,category TEXT,date TEXT,account TEXT DEFAULT 'Cash')")
   db.execSQL("CREATE TABLE categories(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,kind TEXT DEFAULT 'Both')")
   db.execSQL("CREATE TABLE accounts(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,opening REAL DEFAULT 0)")
   db.execSQL("CREATE TABLE budgets(id INTEGER PRIMARY KEY AUTOINCREMENT,category TEXT UNIQUE,amount REAL,period TEXT DEFAULT 'Month')")
+  db.execSQL("CREATE TABLE bills(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,amount REAL,category TEXT,dueDate TEXT,frequency TEXT,account TEXT)")
   seed(db)
  }
  private fun seed(db:SQLiteDatabase) {
@@ -46,6 +53,7 @@ class Store(c:android.content.Context):SQLiteOpenHelper(c,"mymoney.db",null,3) {
  override fun onUpgrade(db:SQLiteDatabase,old:Int,now:Int) {
   if(old<2){try{db.execSQL("ALTER TABLE tx ADD COLUMN account TEXT DEFAULT 'Cash'")}catch(_:Exception){}}
   if(old<3){db.execSQL("CREATE TABLE IF NOT EXISTS categories(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,kind TEXT DEFAULT 'Both')");db.execSQL("CREATE TABLE IF NOT EXISTS accounts(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,opening REAL DEFAULT 0)");db.execSQL("CREATE TABLE IF NOT EXISTS budgets(id INTEGER PRIMARY KEY AUTOINCREMENT,category TEXT UNIQUE,amount REAL,period TEXT DEFAULT 'Month')");seed(db)}
+  if(old<4){db.execSQL("CREATE TABLE IF NOT EXISTS bills(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,amount REAL,category TEXT,dueDate TEXT,frequency TEXT,account TEXT)")}
  }
  fun all():List<Tx>{val a=mutableListOf<Tx>();readableDatabase.rawQuery("SELECT id,title,amount,kind,category,date,COALESCE(account,'Cash') FROM tx ORDER BY date DESC,id DESC",null).use{while(it.moveToNext())a+=Tx(it.getLong(0),it.getString(1),it.getDouble(2),it.getString(3),it.getString(4),it.getString(5),it.getString(6))};return a}
  fun save(t:Tx){if(t.id==0L)writableDatabase.execSQL("INSERT INTO tx(title,amount,kind,category,date,account) VALUES(?,?,?,?,?,?)",arrayOf(t.title,t.amount,t.kind,t.category,t.date,t.account)) else writableDatabase.execSQL("UPDATE tx SET title=?,amount=?,kind=?,category=?,date=?,account=? WHERE id=?",arrayOf(t.title,t.amount,t.kind,t.category,t.date,t.account,t.id))}
@@ -59,6 +67,9 @@ class Store(c:android.content.Context):SQLiteOpenHelper(c,"mymoney.db",null,3) {
  fun budgets():List<Budget>{val a=mutableListOf<Budget>();readableDatabase.rawQuery("SELECT id,category,amount,period FROM budgets ORDER BY category",null).use{while(it.moveToNext())a+=Budget(it.getLong(0),it.getString(1),it.getDouble(2),it.getString(3))};return a}
  fun saveBudget(id:Long,c:String,v:Double,p:String){writableDatabase.execSQL("INSERT OR REPLACE INTO budgets(id,category,amount,period) VALUES(COALESCE((SELECT id FROM budgets WHERE category=?),?),?,?,?)",arrayOf(c,if(id==0L)null else id,c,v,p))}
  fun deleteBudget(id:Long){writableDatabase.delete("budgets","id=?",arrayOf(id.toString()))}
+ fun bills():List<Bill>{val a=mutableListOf<Bill>();readableDatabase.rawQuery("SELECT id,title,amount,category,dueDate,frequency,account FROM bills ORDER BY dueDate,id",null).use{while(it.moveToNext())a+=Bill(it.getLong(0),it.getString(1),it.getDouble(2),it.getString(3),it.getString(4),it.getString(5),it.getString(6))};return a}
+ fun saveBill(b:Bill){if(b.id==0L)writableDatabase.execSQL("INSERT INTO bills(title,amount,category,dueDate,frequency,account) VALUES(?,?,?,?,?,?)",arrayOf(b.title,b.amount,b.category,b.dueDate,b.frequency,b.account))else writableDatabase.execSQL("UPDATE bills SET title=?,amount=?,category=?,dueDate=?,frequency=?,account=? WHERE id=?",arrayOf(b.title,b.amount,b.category,b.dueDate,b.frequency,b.account,b.id))}
+ fun deleteBill(id:Long){writableDatabase.delete("bills","id=?",arrayOf(id.toString()))}
 }
 
 class MainActivity:Activity(){
