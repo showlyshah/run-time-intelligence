@@ -6,6 +6,10 @@ on:
     paths:
       - "runtime-intelligence/**"
       - ".github/workflows/weekly-apk.yml"
+  pull_request:
+    paths:
+      - "runtime-intelligence/**"
+      - ".github/workflows/weekly-apk.yml"
   schedule:
     - cron: "17 3 * * 1"
   workflow_dispatch:
