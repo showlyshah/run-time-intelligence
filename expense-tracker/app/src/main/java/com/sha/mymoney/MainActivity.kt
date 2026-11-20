@@ -24,6 +24,9 @@ import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 
 private const val BG = 0xFF101827.toInt()
 private const val PANEL = 0xFF1D2A3D.toInt()
@@ -62,7 +65,7 @@ class Store(c:android.content.Context):SQLiteOpenHelper(c,"mymoney.db",null,4) {
  fun addCategory(n:String){writableDatabase.execSQL("INSERT OR IGNORE INTO categories(name,kind) VALUES(?,'Both')",arrayOf(n))}
  fun deleteCategory(n:String){writableDatabase.delete("categories","name=?",arrayOf(n))}
  fun accounts():List<Account>{val a=mutableListOf<Account>();readableDatabase.rawQuery("SELECT id,name,opening FROM accounts ORDER BY name",null).use{while(it.moveToNext())a+=Account(it.getLong(0),it.getString(1),it.getDouble(2))};return a}
- fun saveAccount(id:Long,n:String,v:Double){if(id==0L)writableDatabase.execSQL("INSERT OR IGNORE INTO accounts(name,opening) VALUES(?,?)",arrayOf(n,v)) else writableDatabase.execSQL("UPDATE accounts SET name=?,opening=? WHERE id=?",arrayOf(n,v,id))}
+ fun saveAccount(id:Long,n:String,v:Double){if(id==0L)writableDatabase.execSQL("INSERT OR IGNORE INTO accounts(name,opening) VALUES(?,?)",arrayOf(n,v)) else {val db=writableDatabase;val oldName=readableDatabase.rawQuery("SELECT name FROM accounts WHERE id=?",arrayOf(id.toString())).use{if(it.moveToFirst())it.getString(0) else null};db.beginTransaction();try{db.execSQL("UPDATE accounts SET name=?,opening=? WHERE id=?",arrayOf(n,v,id));if(oldName!=null&&oldName!=n){db.execSQL("UPDATE tx SET account=? WHERE account=?",arrayOf(n,oldName));db.execSQL("UPDATE bills SET account=? WHERE account=?",arrayOf(n,oldName))};db.setTransactionSuccessful()}finally{db.endTransaction()}}}
  fun deleteAccount(id:Long){writableDatabase.delete("accounts","id=?",arrayOf(id.toString()))}
  fun budgets():List<Budget>{val a=mutableListOf<Budget>();readableDatabase.rawQuery("SELECT id,category,amount,period FROM budgets ORDER BY category",null).use{while(it.moveToNext())a+=Budget(it.getLong(0),it.getString(1),it.getDouble(2),it.getString(3))};return a}
  fun saveBudget(id:Long,c:String,v:Double,p:String){writableDatabase.execSQL("INSERT OR REPLACE INTO budgets(id,category,amount,period) VALUES(COALESCE((SELECT id FROM budgets WHERE category=?),?),?,?,?)",arrayOf(c,if(id==0L)null else id,c,v,p))}
@@ -70,6 +73,44 @@ class Store(c:android.content.Context):SQLiteOpenHelper(c,"mymoney.db",null,4) {
  fun bills():List<Bill>{val a=mutableListOf<Bill>();readableDatabase.rawQuery("SELECT id,title,amount,category,dueDate,frequency,account FROM bills ORDER BY dueDate,id",null).use{while(it.moveToNext())a+=Bill(it.getLong(0),it.getString(1),it.getDouble(2),it.getString(3),it.getString(4),it.getString(5),it.getString(6))};return a}
  fun saveBill(b:Bill){if(b.id==0L)writableDatabase.execSQL("INSERT INTO bills(title,amount,category,dueDate,frequency,account) VALUES(?,?,?,?,?,?)",arrayOf(b.title,b.amount,b.category,b.dueDate,b.frequency,b.account))else writableDatabase.execSQL("UPDATE bills SET title=?,amount=?,category=?,dueDate=?,frequency=?,account=? WHERE id=?",arrayOf(b.title,b.amount,b.category,b.dueDate,b.frequency,b.account,b.id))}
  fun deleteBill(id:Long){writableDatabase.delete("bills","id=?",arrayOf(id.toString()))}
+ fun createBackupJson():String {
+  val root=JSONObject().put("app","LoganTech Expenses Tracker").put("formatVersion",1).put("createdAt",java.time.Instant.now().toString())
+  root.put("transactions",JSONArray().apply{all().forEach{t->put(JSONObject().put("id",t.id).put("title",t.title).put("amount",t.amount).put("kind",t.kind).put("category",t.category).put("date",t.date).put("account",t.account))}})
+  root.put("categories",JSONArray().apply{readableDatabase.rawQuery("SELECT name,kind FROM categories ORDER BY name",null).use{while(it.moveToNext())put(JSONObject().put("name",it.getString(0)).put("kind",it.getString(1)))}})
+  root.put("accounts",JSONArray().apply{accounts().forEach{a->put(JSONObject().put("id",a.id).put("name",a.name).put("opening",a.opening))}})
+  root.put("budgets",JSONArray().apply{budgets().forEach{b->put(JSONObject().put("id",b.id).put("category",b.category).put("amount",b.amount).put("period",b.period))}})
+  root.put("bills",JSONArray().apply{bills().forEach{b->put(JSONObject().put("id",b.id).put("title",b.title).put("amount",b.amount).put("category",b.category).put("dueDate",b.dueDate).put("frequency",b.frequency).put("account",b.account))}})
+  return root.toString(2)
+ }
+ fun restoreBackupJson(source:String) {
+  val root=JSONObject(source)
+  require(root.optString("app")=="LoganTech Expenses Tracker"){"This file is not a LoganTech Expenses Tracker backup."}
+  require(root.optInt("formatVersion",0)==1){"Unsupported backup version."}
+  val txs=root.optJSONArray("transactions")?:throw IllegalArgumentException("Backup is missing transactions.")
+  val cats=root.optJSONArray("categories")?:throw IllegalArgumentException("Backup is missing categories.")
+  val accs=root.optJSONArray("accounts")?:throw IllegalArgumentException("Backup is missing accounts.")
+  val buds=root.optJSONArray("budgets")?:throw IllegalArgumentException("Backup is missing budgets.")
+  val billRows=root.optJSONArray("bills")?:throw IllegalArgumentException("Backup is missing bills.")
+  require(accs.length()>0){"Backup must contain at least one account."}
+  val seenTx=HashSet<Long>();val seenAcc=HashSet<Long>();val seenBud=HashSet<Long>();val seenBills=HashSet<Long>()
+  for(i in 0 until txs.length()){val o=txs.getJSONObject(i);val id=o.getLong("id");val amount=o.getDouble("amount");require(id>0&&seenTx.add(id)){"Invalid or duplicate transaction ID."};require(amount.isFinite()&&amount>0){"Invalid transaction amount."};require(o.getString("kind")=="Income"||o.getString("kind")=="Expense"){"Invalid transaction type."};LocalDate.parse(o.getString("date"));require(o.getString("title").isNotBlank()&&o.getString("category").isNotBlank()&&o.getString("account").isNotBlank()){"Incomplete transaction record."}}
+  for(i in 0 until cats.length()){val o=cats.getJSONObject(i);require(o.getString("name").isNotBlank()){"Invalid category."}}
+  for(i in 0 until accs.length()){val o=accs.getJSONObject(i);val id=o.getLong("id");require(id>0&&seenAcc.add(id)&&o.getString("name").isNotBlank()&&o.getDouble("opening").isFinite()){"Invalid account record."}}
+  for(i in 0 until buds.length()){val o=buds.getJSONObject(i);val id=o.getLong("id");require(id>0&&seenBud.add(id)&&o.getString("category").isNotBlank()&&o.getDouble("amount").isFinite()&&o.getDouble("amount")>0){"Invalid budget record."};require(o.getString("period") in listOf("Week","Month","Year")){"Invalid budget period."}}
+  for(i in 0 until billRows.length()){val o=billRows.getJSONObject(i);val id=o.getLong("id");require(id>0&&seenBills.add(id)&&o.getString("title").isNotBlank()&&o.getDouble("amount").isFinite()&&o.getDouble("amount")>0){"Invalid bill record."};LocalDate.parse(o.getString("dueDate"));require(o.getString("frequency") in listOf("One-time","Weekly","Monthly","Yearly")){"Invalid bill frequency."}}
+  val db=writableDatabase
+  db.beginTransaction()
+  try {
+   db.delete("tx",null,null);db.delete("categories",null,null);db.delete("accounts",null,null);db.delete("budgets",null,null);db.delete("bills",null,null)
+   for(i in 0 until cats.length()){val o=cats.getJSONObject(i);db.execSQL("INSERT INTO categories(name,kind) VALUES(?,?)",arrayOf(o.getString("name"),o.optString("kind","Both")))}
+   for(i in 0 until accs.length()){val o=accs.getJSONObject(i);db.execSQL("INSERT INTO accounts(id,name,opening) VALUES(?,?,?)",arrayOf(o.getLong("id"),o.getString("name"),o.getDouble("opening")))}
+   for(i in 0 until txs.length()){val o=txs.getJSONObject(i);db.execSQL("INSERT INTO tx(id,title,amount,kind,category,date,account) VALUES(?,?,?,?,?,?,?)",arrayOf(o.getLong("id"),o.getString("title"),o.getDouble("amount"),o.getString("kind"),o.getString("category"),o.getString("date"),o.getString("account")))}
+   for(i in 0 until buds.length()){val o=buds.getJSONObject(i);db.execSQL("INSERT INTO budgets(id,category,amount,period) VALUES(?,?,?,?)",arrayOf(o.getLong("id"),o.getString("category"),o.getDouble("amount"),o.getString("period")))}
+   for(i in 0 until billRows.length()){val o=billRows.getJSONObject(i);db.execSQL("INSERT INTO bills(id,title,amount,category,dueDate,frequency,account) VALUES(?,?,?,?,?,?,?)",arrayOf(o.getLong("id"),o.getString("title"),o.getDouble("amount"),o.getString("category"),o.getString("dueDate"),o.getString("frequency"),o.getString("account")))}
+   db.setTransactionSuccessful()
+  } finally {db.endTransaction()}
+ }
+
 }
 
 class MainActivity:Activity(){
@@ -164,11 +205,13 @@ class MainActivity:Activity(){
    alerts.take(3).forEach{warning.addView(text(it,13f,0xFFFFC27A.toInt()))}
    c.addView(warning)
   }
-  val actions=LinearLayout(this).apply{gravity=Gravity.CENTER}
-  actions.addView(button("＋ Expense"){editTransaction(null,"Expense")},LinearLayout.LayoutParams(0,-2,1f).apply{setMargins(0,0,dp(5),0)})
-  actions.addView(button("＋ Income"){editTransaction(null,"Income")},LinearLayout.LayoutParams(0,-2,1f).apply{setMargins(dp(5),0,0,0)})
+  val actions=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(2),dp(4),dp(2),dp(4))}
+  val entryRow=LinearLayout(this).apply{gravity=Gravity.CENTER}
+  entryRow.addView(button("＋ Expense"){editTransaction(null,"Expense")},LinearLayout.LayoutParams(0,dp(52),1f).apply{setMargins(0,0,dp(7),0)})
+  entryRow.addView(button("＋ Income"){editTransaction(null,"Income")},LinearLayout.LayoutParams(0,dp(52),1f).apply{setMargins(dp(7),0,0,0)})
+  actions.addView(entryRow)
+  actions.addView(button("📤  Export & Backup"){exportDialog()},LinearLayout.LayoutParams(-1,dp(50)).apply{topMargin=dp(16)})
   c.addView(actions)
-  c.addView(button("📤  Export & backup"){exportDialog()})
   val prefs=getSharedPreferences("mymoney_backup",MODE_PRIVATE)
   val last=prefs.getLong("last_backup_time",0L)
   val backupStatus=panel()
@@ -215,7 +258,8 @@ class MainActivity:Activity(){
   AlertDialog.Builder(this).setTitle(if(old==null)"New transaction" else "Edit transaction").setView(box).setPositiveButton("Save"){_,_->val a=amount.text.toString().toDoubleOrNull();val d=date.text.toString();if(a!=null&&a>0&&validDate(d)){store.save(Tx(old?.id?:0L,title.text.toString().ifBlank{cat.selectedItem.toString()},a,kind.selectedItem.toString(),cat.selectedItem.toString(),d,account.selectedItem.toString()));show()}else Toast.makeText(this,"Enter a valid amount and date (YYYY-MM-DD)",Toast.LENGTH_LONG).show()}.setNegativeButton("Cancel",null).show()
  }
  private fun validDate(s:String):Boolean=try{val f=SimpleDateFormat("yyyy-MM-dd",Locale.US);f.isLenient=false;f.parse(s)!=null}catch(_:Exception){false}
- private fun filtered():List<Tx>{val now=Calendar.getInstance();return store.all().filter{t->try{val f=SimpleDateFormat("yyyy-MM-dd",Locale.US);f.isLenient=false;val x=Calendar.getInstance().apply{time=f.parse(t.date)!!};when(period){"Day"->now.get(Calendar.YEAR)==x.get(Calendar.YEAR)&&now.get(Calendar.DAY_OF_YEAR)==x.get(Calendar.DAY_OF_YEAR);"Week"->now.get(Calendar.YEAR)==x.get(Calendar.YEAR)&&now.get(Calendar.WEEK_OF_YEAR)==x.get(Calendar.WEEK_OF_YEAR);"Year"->now.get(Calendar.YEAR)==x.get(Calendar.YEAR);else->now.get(Calendar.YEAR)==x.get(Calendar.YEAR)&&now.get(Calendar.MONTH)==x.get(Calendar.MONTH)}}catch(_:Exception){false}}}
+ private fun matchesPeriod(date:String,selected:String,now:LocalDate=LocalDate.now()):Boolean=try{val d=LocalDate.parse(date);when(selected){"Day"->d==now;"Week"->d.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))==now.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));"Year"->d.year==now.year;else->d.year==now.year&&d.month==now.month}}catch(_:Exception){false}
+ private fun filtered():List<Tx> = store.all().filter{matchesPeriod(it.date,period)}
 
  private fun billsPage(c:LinearLayout){
   val bills=store.bills()
@@ -279,27 +323,49 @@ class MainActivity:Activity(){
  }
  private fun analysis(c:LinearLayout){c.addView(text("📊  Spending insights",22f,GOLD));val r=LinearLayout(this);listOf("Day","Week","Month","Year").forEach{val b=button(it){period=it;show()};b.textSize=11f;r.addView(b,LinearLayout.LayoutParams(0,-2,1f).apply{setMargins(dp(2),0,dp(2),0)})};c.addView(r);val data=filtered().filter{it.kind=="Expense"};val total=data.sumOf{it.amount};val summary=panel();summary.addView(text("TOTAL SPENDING",11f,MUTED));summary.addView(text(money(total),29f,GOLD));summary.addView(text(period+" overview  •  "+data.size+" transactions",12f,MUTED));c.addView(summary);val grouped=data.groupBy{it.category}.mapValues{e->e.value.sumOf{it.amount}}.toList().sortedByDescending{it.second};if(grouped.isEmpty())c.addView(text("🌱  No expenses in this period yet. Add a transaction to see your chart."))else{val chart=PieView(this,grouped.toMap()){selected->val txs=data.filter{it.category==selected};AlertDialog.Builder(this).setTitle(categoryIcon(selected)+"  "+selected).setItems(txs.map{it.date+"  "+it.title+"  "+money(it.amount)}.toTypedArray(),null).setPositiveButton("Close",null).show()};c.addView(chart,LinearLayout.LayoutParams(-1,dp(260)));c.addView(text("CATEGORY BREAKDOWN",12f,MUTED));grouped.forEachIndexed{i,e->val p=panel();p.orientation=LinearLayout.HORIZONTAL;p.gravity=Gravity.CENTER_VERTICAL;p.addView(text(categoryIcon(e.first),23f));val details=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};details.addView(text(e.first,15f,COLORS[i%COLORS.size]));details.addView(text(((e.second/total)*100).toInt().toString()+"% of spending",11f,MUTED));p.addView(details,LinearLayout.LayoutParams(0,-2,1f));p.addView(text(money(e.second),14f,Color.WHITE));p.setOnClickListener{chart.performClick()};c.addView(p)}}}
  private fun budgetsPage(c:LinearLayout){c.addView(text("Budgets",22f,GOLD));c.addView(button("+ Set / update budget"){budgetDialog(null)});val list=store.all();store.budgets().forEach{b->val spent=list.filter{it.kind=="Expense"&&it.category==b.category&&inBudgetPeriod(it.date,b.period)}.sumOf{it.amount};val pct=if(b.amount>0)(spent/b.amount*100).toInt() else 0;val p=panel();p.addView(text(categoryIcon(b.category)+"  "+b.category+" • "+b.period,17f,COLORS[(store.categories().indexOf(b.category).coerceAtLeast(0))%COLORS.size]));p.addView(text(money(spent)+" spent of "+money(b.amount),14f));val bar=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply{max=100;progress=pct.coerceIn(0,100);progressTintList=android.content.res.ColorStateList.valueOf(if(pct>=100)0xFFE58B7D.toInt() else if(pct>=80)0xFFFFB86B.toInt() else GOLD)};p.addView(bar,LinearLayout.LayoutParams(-1,dp(12)));p.addView(text(if(pct>=100)"⚠ Budget exceeded" else if(pct>=80)"⚠ $pct% used • getting close" else "$pct% used",12f,if(pct>=100)0xFFE58B7D.toInt() else MUTED));p.setOnClickListener{budgetDialog(b)};p.setOnLongClickListener{AlertDialog.Builder(this).setMessage("Delete this budget?").setPositiveButton("Delete"){_,_->store.deleteBudget(b.id);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)};if(store.budgets().isEmpty())c.addView(text("Create a category budget and track spending against it."))}
- private fun inBudgetPeriod(date:String,p:String):Boolean=try{val f=SimpleDateFormat("yyyy-MM-dd",Locale.US);val d=Calendar.getInstance().apply{time=f.parse(date)!!};val n=Calendar.getInstance();when(p){"Week"->d.get(Calendar.YEAR)==n.get(Calendar.YEAR)&&d.get(Calendar.WEEK_OF_YEAR)==n.get(Calendar.WEEK_OF_YEAR);"Year"->d.get(Calendar.YEAR)==n.get(Calendar.YEAR);else->d.get(Calendar.YEAR)==n.get(Calendar.YEAR)&&d.get(Calendar.MONTH)==n.get(Calendar.MONTH)}}catch(_:Exception){false}
+ private fun inBudgetPeriod(date:String,p:String):Boolean=matchesPeriod(date,p)
  private fun budgetDialog(old:Budget?){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)};val cats=store.categories().filter{it!="Salary"}.ifEmpty{listOf("Other")};val cat=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,cats);setSelection(cats.indexOf(old?.category).coerceAtLeast(0))};val amount=EditText(this).apply{hint="Budget amount";inputType=8194;setText(old?.amount?.toString()?:"")};val period=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,listOf("Month","Week","Year"));setSelection(listOf("Month","Week","Year").indexOf(old?.period?: "Month"))};box.addView(cat);box.addView(amount);box.addView(period);AlertDialog.Builder(this).setTitle("Category budget").setView(box).setPositiveButton("Save"){_,_->val v=amount.text.toString().toDoubleOrNull();if(v!=null&&v>0){store.saveBudget(old?.id?:0L,cat.selectedItem.toString(),v,period.selectedItem.toString());show()}else Toast.makeText(this,"Enter a valid budget",Toast.LENGTH_SHORT).show()}.setNegativeButton("Cancel",null).show()}
  private fun accountsPage(c:LinearLayout){c.addView(text("Accounts",22f,GOLD));c.addView(button("+ Add account"){accountDialog(null)});store.accounts().forEach{a->val balance=a.opening+store.all().filter{it.account==a.name&&it.kind=="Income"}.sumOf{it.amount}-store.all().filter{it.account==a.name&&it.kind=="Expense"}.sumOf{it.amount};val p=panel();p.addView(text(categoryIcon(a.name)+"  "+a.name,17f,GOLD));p.addView(text("Current balance  "+money(balance),15f,GOLD));p.addView(text("Opening balance  "+money(a.opening),12f,MUTED));p.setOnClickListener{accountDialog(a)};p.setOnLongClickListener{if(a.name=="Cash"){Toast.makeText(this,"The default Cash account cannot be deleted",Toast.LENGTH_SHORT).show()}else AlertDialog.Builder(this).setMessage("Delete account? Existing transactions will remain but be assigned to Cash.").setPositiveButton("Delete"){_,_->store.all().filter{it.account==a.name}.forEach{store.save(it.copy(account="Cash"))};store.deleteAccount(a.id);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)}}
  private fun accountDialog(old:Account?){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)};val name=EditText(this).apply{hint="Account name";setText(old?.name?:"")};val opening=EditText(this).apply{hint="Opening balance";inputType=8194;setText(old?.opening?.toString()?:"0")};box.addView(name);box.addView(opening);AlertDialog.Builder(this).setTitle(if(old==null)"New account" else "Edit account").setView(box).setPositiveButton("Save"){_,_->val v=opening.text.toString().toDoubleOrNull();if(name.text.isNotBlank()&&v!=null){store.saveAccount(old?.id?:0L,name.text.toString().trim(),v);show()}else Toast.makeText(this,"Enter account name and valid balance",Toast.LENGTH_SHORT).show()}.setNegativeButton("Cancel",null).show()}
  private fun categoriesPage(c:LinearLayout){c.addView(text("Categories",22f,GOLD));c.addView(button("+ Add category"){val e=EditText(this).apply{hint="Category name"};AlertDialog.Builder(this).setTitle("New category").setView(e).setPositiveButton("Add"){_,_->if(e.text.isNotBlank()){store.addCategory(e.text.toString().trim());show()}}.setNegativeButton("Cancel",null).show()});store.categories().forEach{n->val p=panel();p.orientation=LinearLayout.HORIZONTAL;p.gravity=Gravity.CENTER_VERTICAL;p.addView(text(categoryIcon(n),24f));p.addView(text(n,16f,COLORS[(store.categories().indexOf(n).coerceAtLeast(0))%COLORS.size]),LinearLayout.LayoutParams(0,-2,1f));p.addView(text("⋮",20f,MUTED));p.setOnLongClickListener{AlertDialog.Builder(this).setMessage("Delete category $n? Existing transactions keep this category label.").setPositiveButton("Delete"){_,_->store.deleteCategory(n);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)}}
 
  private fun exportDialog(){
-  val options=arrayOf("Save PDF summary","Save CSV transaction report","Share summary to Google Keep / Notes")
-  AlertDialog.Builder(this).setTitle("Export & backup").setItems(options){_,which->when(which){0->createExportFile("pdf");1->createExportFile("csv");2->shareSummaryNote()}}.setNegativeButton("Cancel",null).show()
+  val options=arrayOf("Save PDF summary","Save CSV transaction report","Save FULL restore backup (JSON)","Restore from backup (JSON)","Share summary to Google Keep / Notes")
+  AlertDialog.Builder(this).setTitle("Export & backup").setItems(options){_,which->when(which){0->createExportFile("pdf");1->createExportFile("csv");2->createExportFile("json");3->chooseBackupToRestore();4->shareSummaryNote()}}.setNegativeButton("Cancel",null).show()
+ }
+ private fun chooseBackupToRestore(){
+  val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type="application/json";addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)}
+  try{startActivityForResult(intent,712)}catch(e:Exception){Toast.makeText(this,"Could not open file picker: "+e.message,Toast.LENGTH_LONG).show()}
+ }
+ private fun confirmRestore(json:String){
+  AlertDialog.Builder(this).setTitle("Restore backup?")
+   .setMessage("This replaces current transactions, categories, accounts, budgets and bills. A safety copy of your current data will be saved inside the app first.")
+   .setPositiveButton("Restore data"){_,_->
+    try{
+     val safety=File(filesDir,"LoganTech-pre-restore-"+System.currentTimeMillis()+".json")
+     safety.writeText(store.createBackupJson(),Charsets.UTF_8)
+     store.restoreBackupJson(json)
+     Toast.makeText(this,"Backup restored. All screens and calculations have been refreshed.",Toast.LENGTH_LONG).show()
+     show()
+    }catch(e:Exception){Toast.makeText(this,"Restore failed: "+(e.message?: "Invalid backup"),Toast.LENGTH_LONG).show()}
+   }.setNegativeButton("Cancel",null).show()
  }
  private fun createExportFile(format:String){
   exportFormat=format
   val stamp=SimpleDateFormat("yyyyMMdd-HHmm",Locale.US).format(Date())
-  val intent=Intent(Intent.ACTION_CREATE_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type=if(format=="pdf")"application/pdf" else "text/csv";putExtra(Intent.EXTRA_TITLE,"LoganTechExpenses-$stamp.$format")}
+  val mime=when(format){"pdf"->"application/pdf";"json"->"application/json";else->"text/csv"}
+  val intent=Intent(Intent.ACTION_CREATE_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type=mime;putExtra(Intent.EXTRA_TITLE,"LoganTechExpenses-$stamp.$format")}
   startActivityForResult(intent,710)
  }
  override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
   super.onActivityResult(requestCode,resultCode,data)
   if(requestCode==710&&resultCode==Activity.RESULT_OK){val uri=data?.data?:return
-   try{val bytes=if(exportFormat=="pdf")buildSummaryPdf() else buildTransactionsCsv().toByteArray(Charsets.UTF_8);contentResolver.openOutputStream(uri)?.use{it.write(bytes)};Toast.makeText(this,"LoganTech Expenses Tracker export saved successfully",Toast.LENGTH_LONG).show()}
+   try{val bytes=when(exportFormat){"pdf"->buildSummaryPdf();"json"->store.createBackupJson().toByteArray(Charsets.UTF_8);else->buildTransactionsCsv().toByteArray(Charsets.UTF_8)};contentResolver.openOutputStream(uri)?.use{it.write(bytes)}?:throw java.io.IOException("Could not write selected file");Toast.makeText(this,"LoganTech Expenses Tracker export saved successfully",Toast.LENGTH_LONG).show()}
    catch(e:Exception){Toast.makeText(this,"Export failed: "+e.message,Toast.LENGTH_LONG).show()}
+  }
+  if(requestCode==712&&resultCode==Activity.RESULT_OK){val uri=data?.data?:return
+   try{val json=contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use{it.readText()}?:throw java.io.IOException("Could not read selected file");confirmRestore(json)}
+   catch(e:Exception){Toast.makeText(this,"Could not read backup: "+e.message,Toast.LENGTH_LONG).show()}
   }
  }
  private fun summaryText():String{
@@ -367,6 +433,7 @@ class MonthlyBackupWorker(context:android.content.Context,params:androidx.work.W
    }
    saveBackup("LoganTechExpenses-$stamp.csv","text/csv",csv.toString().toByteArray(Charsets.UTF_8))
    saveBackup("LoganTechExpenses-$stamp-summary.txt","text/plain",summary.toByteArray(Charsets.UTF_8))
+   saveBackup("LoganTechExpenses-$stamp-full-backup.json","application/json",store.createBackupJson().toByteArray(Charsets.UTF_8))
    val billCsv=StringBuilder("Bill,Amount,Category,Next Due Date,Frequency,Account\n")
    store.bills().forEach{b->billCsv.append(listOf(b.title,b.amount.toString(),b.category,b.dueDate,b.frequency,b.account).joinToString(","){ "\""+it.replace("\"","\"\"")+"\"" }).append("\n")}
    saveBackup("LoganTechExpenses-$stamp-bills.csv","text/csv",billCsv.toString().toByteArray(Charsets.UTF_8))
