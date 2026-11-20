@@ -241,6 +241,8 @@ class MainActivity:Activity(){
   }
   root.addView(nav,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8)})
   setContentView(root)
+  root.alpha=0f;root.translationY=dp(14).toFloat()
+  root.animate().alpha(1f).translationY(0f).setDuration(360).setInterpolator(android.view.animation.OvershootInterpolator(0.72f)).start()
   root.setOnApplyWindowInsetsListener{view,insets->
    val left=insets.systemWindowInsetLeft;val top=insets.systemWindowInsetTop
    val right=insets.systemWindowInsetRight;val bottom=insets.systemWindowInsetBottom
