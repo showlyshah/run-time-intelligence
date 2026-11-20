@@ -93,7 +93,7 @@ class MainActivity:Activity(){
   val head=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL};head.addView(text("💠 LoganTech Expenses Tracker",20f,GOLD),LinearLayout.LayoutParams(0,-2,1f));head.addView(text("SMART FINANCE",10f,MUTED));root.addView(head)
   val body=ScrollView(this);val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};body.addView(content);root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
   when(tab){0->records(content);1->analysis(content);2->budgetsPage(content);3->accountsPage(content);4->categoriesPage(content);5->billsPage(content)}
-  val nav=LinearLayout(this).apply{background=rounded(PANEL,20f);gravity=Gravity.CENTER};listOf("📒\\nRecords","📊\\nAnalysis","🎯\\nBudgets","🏦\\nAccounts","🎨\\nCategories","🧾\\nBills").forEachIndexed{i,n->val b=TextView(this).apply{text=n;textSize=10f;gravity=Gravity.CENTER;setTextColor(if(tab==i)GOLD else MUTED);setTypeface(null,if(tab==i)Typeface.BOLD else Typeface.NORMAL);setPadding(dp(2),dp(9),dp(2),dp(9));setOnClickListener{tab=i;chosenCategory=null;show()}};nav.addView(b,LinearLayout.LayoutParams(0,-2,1f))};root.addView(nav);setContentView(root)
+  val nav=LinearLayout(this).apply{background=rounded(PANEL,20f);gravity=Gravity.CENTER};listOf("📒\nRecords","📊\nAnalysis","🎯\nBudgets","🏦\nAccounts","🎨\nCategories","🧾\nBills").forEachIndexed{i,n->val b=TextView(this).apply{text=n;textSize=10f;gravity=Gravity.CENTER;setTextColor(if(tab==i)GOLD else MUTED);setTypeface(null,if(tab==i)Typeface.BOLD else Typeface.NORMAL);setPadding(dp(2),dp(9),dp(2),dp(9));setOnClickListener{tab=i;chosenCategory=null;show()}};nav.addView(b,LinearLayout.LayoutParams(0,-2,1f))};root.addView(nav);setContentView(root)
  }
  private fun totals(list:List<Tx>,kind:String)=list.filter{it.kind==kind}.sumOf{it.amount}
  private fun records(c:LinearLayout){
@@ -336,8 +336,8 @@ class MonthlyBackupWorker(context:android.content.Context,params:androidx.work.W
    }
    saveBackup("LoganTechExpenses-$stamp.csv","text/csv",csv.toString().toByteArray(Charsets.UTF_8))
    saveBackup("LoganTechExpenses-$stamp-summary.txt","text/plain",summary.toByteArray(Charsets.UTF_8))
-   val billCsv=StringBuilder("Bill,Amount,Category,Next Due Date,Frequency,Account\\n")
-   store.bills().forEach{b->billCsv.append(listOf(b.title,b.amount.toString(),b.category,b.dueDate,b.frequency,b.account).joinToString(","){ "\\\""+it.replace("\\\"","\\\"\\\"")+"\\\"" }).append("\\n")}
+   val billCsv=StringBuilder("Bill,Amount,Category,Next Due Date,Frequency,Account\n")
+   store.bills().forEach{b->billCsv.append(listOf(b.title,b.amount.toString(),b.category,b.dueDate,b.frequency,b.account).joinToString(","){ "\""+it.replace("\"","\"\"")+"\"" }).append("\n")}
    saveBackup("LoganTechExpenses-$stamp-bills.csv","text/csv",billCsv.toString().toByteArray(Charsets.UTF_8))
    applicationContext.getSharedPreferences("mymoney_backup",0).edit().putLong("last_backup_time",System.currentTimeMillis()).putString("backup_state","success").remove("backup_error").apply()
    androidx.work.ListenableWorker.Result.success()
