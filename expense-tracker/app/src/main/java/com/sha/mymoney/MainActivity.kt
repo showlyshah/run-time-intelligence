@@ -282,6 +282,8 @@ class MainActivity:Activity(){
   tx.filter{it.kind=="Expense"}.groupBy{it.category}.mapValues{e->e.value.sumOf{it.amount}}.toList().sortedByDescending{it.second}.forEach{out.append(it.first).append(": ").append(money(it.second)).append("\n")}
   out.append("\nACCOUNT BALANCES\n")
   store.accounts().forEach{a->val rows=tx.filter{it.account==a.name};out.append(a.name).append(": ").append(money(a.opening+totals(rows,"Income")-totals(rows,"Expense"))).append("\n")}
+  out.append("\nUPCOMING BILLS\n")
+  store.bills().forEach{b->out.append(b.title).append(" | ").append(money(b.amount)).append(" | ").append(b.dueDate).append(" | ").append(b.frequency).append(" | ").append(b.account).append("\n")}
   out.append("\nTRANSACTIONS\n")
   tx.forEach{t->out.append(t.date).append(" | ").append(t.kind).append(" | ").append(t.category).append(" | ").append(t.title).append(" | ").append(money(t.amount)).append(" | ").append(t.account).append("\n")}
   return out.toString()
@@ -334,6 +336,9 @@ class MonthlyBackupWorker(context:android.content.Context,params:androidx.work.W
    }
    saveBackup("LoganTechExpenses-$stamp.csv","text/csv",csv.toString().toByteArray(Charsets.UTF_8))
    saveBackup("LoganTechExpenses-$stamp-summary.txt","text/plain",summary.toByteArray(Charsets.UTF_8))
+   val billCsv=StringBuilder("Bill,Amount,Category,Next Due Date,Frequency,Account\\n")
+   store.bills().forEach{b->billCsv.append(listOf(b.title,b.amount.toString(),b.category,b.dueDate,b.frequency,b.account).joinToString(","){ "\\\""+it.replace("\\\"","\\\"\\\"")+"\\\"" }).append("\\n")}
+   saveBackup("LoganTechExpenses-$stamp-bills.csv","text/csv",billCsv.toString().toByteArray(Charsets.UTF_8))
    applicationContext.getSharedPreferences("mymoney_backup",0).edit().putLong("last_backup_time",System.currentTimeMillis()).putString("backup_state","success").remove("backup_error").apply()
    androidx.work.ListenableWorker.Result.success()
   }catch(e:Exception){
@@ -351,5 +356,26 @@ class MonthlyBackupWorker(context:android.content.Context,params:androidx.work.W
    if(!dir.exists()&&!dir.mkdirs())throw java.io.IOException("Could not create backup folder")
    java.io.File(dir,name).writeBytes(bytes)
   }
+ }
+}
+
+
+class BillReminderWorker(context:android.content.Context,params:androidx.work.WorkerParameters):androidx.work.Worker(context,params){
+ override fun doWork():androidx.work.ListenableWorker.Result{
+  return try{
+   val due=Store(applicationContext).bills().mapNotNull{b->try{b to ChronoUnit.DAYS.between(LocalDate.now(),LocalDate.parse(b.dueDate))}catch(_:Exception){null}}.filter{it.second<=3L}.sortedBy{it.second}
+   if(due.isNotEmpty()){
+    if(Build.VERSION.SDK_INT>=33&&applicationContext.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)return androidx.work.ListenableWorker.Result.success()
+    val manager=applicationContext.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as NotificationManager
+    val channel="logantech_bill_due"
+    if(Build.VERSION.SDK_INT>=26)manager.createNotificationChannel(NotificationChannel(channel,"Bill reminders",NotificationManager.IMPORTANCE_DEFAULT).apply{description="Upcoming and overdue bill reminders"})
+    val lines=due.take(5).joinToString("\n"){pair->val b=pair.first;val days=pair.second;when{days<0->"Overdue: "+b.title+" (₹"+b.amount+")";days==0L->"Due today: "+b.title+" (₹"+b.amount+")";else->"Due in "+days+" days: "+b.title+" (₹"+b.amount+")"}}
+    val intent=Intent(applicationContext,MainActivity::class.java).apply{flags=Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP}
+    val pending=PendingIntent.getActivity(applicationContext,712,intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    val notification=Notification.Builder(applicationContext,channel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("LoganTech • Bill reminders").setContentText(due.size.toString()+" payment(s) need your attention").setStyle(Notification.BigTextStyle().bigText(lines)).setContentIntent(pending).setAutoCancel(true).build()
+    manager.notify(712,notification)
+   }
+   androidx.work.ListenableWorker.Result.success()
+  }catch(_:Exception){androidx.work.ListenableWorker.Result.retry()}
  }
 }
