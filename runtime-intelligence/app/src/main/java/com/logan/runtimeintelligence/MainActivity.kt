@@ -241,7 +241,7 @@ class MainActivity : Activity() {
         }
         panel.addView(infoText("Package: ${result.packageName} • ${result.versionName}\nAndroid API: min ${result.minSdk} / target ${result.targetSdk}\nHost-list status: ${result.hostListStatus}\nURL references: ${result.findings.size}"))
         panel.addView(sectionTitle("URL review • select each URL to remove"))
-        panel.addView(infoText("RED = exact match in downloaded ad/tracking lists. ORANGE = possible match based on hostname patterns. GREEN = no match found; it may still be a legitimate endpoint. Only checked, editable literal URLs are changed."))
+        panel.addView(infoText("RED = exact match in AdAway or Yoyo ad-server lists. ORANGE = match in the broader StevenBlack list or a hostname heuristic. GREEN = no match found; it may still be a legitimate endpoint. Only checked, editable literal URLs are changed."))
         val urlFindings = result.findings.groupBy { it.url }.values.map { group -> group.firstOrNull { it.editable } ?: group.first() }
         urlFindings.forEach { finding ->
             val color = when (finding.confidence) {
@@ -249,7 +249,8 @@ class MainActivity : Activity() {
                 "POSSIBLE" -> Color.rgb(210, 112, 0)
                 else -> Color.rgb(35, 135, 65)
             }
-            val label = "${finding.url}\n${finding.file}:${finding.line} • ${finding.category}" +
+            val sourceText = if (finding.matchedSources.isEmpty()) "" else " • ${finding.matchedSources.joinToString()}"
+            val label = "${finding.url}\n${finding.file}:${finding.line} • ${finding.category}$sourceText" +
                 if (finding.editable) "" else "\nDEX/Smali reference • review only (not directly editable)"
             val check = CheckBox(this).apply {
                 text = label
