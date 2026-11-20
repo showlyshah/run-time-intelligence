@@ -1,6 +1,7 @@
 package com.logan.runtimeintelligence
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.ActivityManager
 import android.app.AppOpsManager
 import android.app.admin.DevicePolicyManager
@@ -18,6 +19,7 @@ import android.provider.Settings
 import android.net.Uri
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
@@ -26,6 +28,10 @@ import java.util.Locale
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var report: TextView
+    private lateinit var studioProgress: ProgressBar
+    private lateinit var studioProgressText: TextView
+    private var pendingStudioResult: ApkStudioResult? = null
+    private var pendingSignedApk: java.io.File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,6 +61,14 @@ class MainActivity : Activity() {
             }
             startActivityForResult(picker, APK_PICK_REQUEST)
         })
+        content.addView(sectionTitle("APK Modification Studio"))
+        content.addView(infoText("For APKs you own or are authorised to modify. Decode resources and Smali, review URL references, remove selected literal URLs from editable text/resources, rebuild, sign and verify. Code-only, encrypted, dynamically generated and native references are reported but not automatically rewritten."))
+        content.addView(actionButton("Import APK • decompile and scan URLs") { openApkStudioPicker() })
+        studioProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progress = 0 }
+        studioProgressText = TextView(this).apply { text = "Studio idle • no APK loaded"; textSize = 13f; setPadding(0, 4, 0, 12) }
+        content.addView(studioProgress)
+        content.addView(studioProgressText)
+
         content.addView(actionButton("Audit installed user apps") {
             status.text = "Building local package inventory…"
             Thread {
@@ -136,6 +150,24 @@ class MainActivity : Activity() {
             }
             return
         }
+        if (requestCode == APK_STUDIO_PICK_REQUEST && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            runApkStudioInspection(uri)
+            return
+        }
+        if (requestCode == APK_STUDIO_SAVE_REQUEST && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            val source = pendingSignedApk ?: return
+            try {
+                contentResolver.openOutputStream(uri)?.use { output -> source.inputStream().use { it.copyTo(output) } }
+                    ?: error("Could not open selected destination")
+                status.text = "Signed APK saved • signature and package metadata were verified"
+                studioProgressText.text = "100% • Saved: ${source.name}"
+            } catch (error: Exception) {
+                status.text = "Saving APK failed: ${error.message ?: error.javaClass.simpleName}"
+            }
+            return
+        }
         if (requestCode == APK_PICK_REQUEST && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             status.text = "Analysing selected APK locally…"
@@ -156,6 +188,106 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::report.isInitialized) refreshDiagnostics()
+    }
+
+    private fun openApkStudioPicker() {
+        val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/vnd.android.package-archive"
+        }
+        startActivityForResult(picker, APK_STUDIO_PICK_REQUEST)
+    }
+
+    private fun updateStudioProgress(percent: Int, message: String) {
+        runOnUiThread {
+            studioProgress.progress = percent.coerceIn(0, 100)
+            studioProgressText.text = "$percent% • $message"
+            status.text = message
+        }
+    }
+
+    private fun runApkStudioInspection(uri: Uri) {
+        val studio = ApkModificationStudio(this)
+        updateStudioProgress(1, "Opening selected APK")
+        Thread {
+            try {
+                val result = studio.inspect(uri) { percent, message ->
+                    updateStudioProgress(percent, message)
+                }
+                pendingStudioResult = result
+                runOnUiThread { showUrlReview(result, studio) }
+            } catch (error: Exception) {
+                updateStudioProgress(0, "Failed: ${error.message ?: error.javaClass.simpleName}")
+            }
+        }.start()
+    }
+
+    private fun showUrlReview(result: ApkStudioResult, studio: ApkModificationStudio) {
+        val editableGroups = result.findings.filter { it.editable }.groupBy { it.host }.toSortedMap()
+        val codeOnlyCount = result.findings.count { !it.editable }
+        val hosts = editableGroups.keys.toList()
+        val summary = StringBuilder()
+        summary.append("Package: ${result.packageName}\nVersion: ${result.versionName}\n")
+        summary.append("Android API range: min ${result.minSdk} • target ${result.targetSdk}\n")
+        summary.append("URL references found: ${result.findings.size}\n")
+        summary.append("Editable resource/text references: ${result.findings.count { it.editable }}\n")
+        summary.append("Code-only references not auto-modified: $codeOnlyCount\n\n")
+        result.findings.take(100).forEach { finding ->
+            summary.append("${finding.host} • ${finding.category}\n")
+            summary.append("  ${finding.file}:${finding.line}${if (finding.editable) "" else " • review only"}\n")
+        }
+        report.text = summary.toString()
+        updateStudioProgress(78, "URL scan complete • review the findings")
+
+        if (hosts.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("APK URL scan complete")
+                .setMessage("No editable text/resource URL references were found. Code-only references: $codeOnlyCount. The APK can still be rebuilt and signed without URL changes.")
+                .setNegativeButton("Close", null)
+                .setPositiveButton("Rebuild & sign") { _, _ -> rebuildStudioApk(studio, result, emptySet()) }
+                .show()
+            return
+        }
+
+        val labels = hosts.map { host ->
+            val sample = editableGroups[host].orEmpty().first()
+            val count = editableGroups[host].orEmpty().size
+            "$host • ${sample.category} • $count reference(s)"
+        }.toTypedArray()
+        val checked = BooleanArray(hosts.size)
+        AlertDialog.Builder(this)
+            .setTitle("Select URL hosts to remove")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setMessage("Only literal URL strings in decoded text/resource files are automatically cleared. Smali/code, encrypted, dynamic and native references remain untouched. Heuristic labels are not a malware verdict.")
+            .setNegativeButton("Cancel", null)
+            .setNeutralButton("Rebuild unchanged") { _, _ -> rebuildStudioApk(studio, result, emptySet()) }
+            .setPositiveButton("Remove selected • rebuild & sign") { _, _ ->
+                val selected = hosts.indices.filter { checked[it] }.map { hosts[it] }.toSet()
+                rebuildStudioApk(studio, result, selected)
+            }
+            .show()
+    }
+
+    private fun rebuildStudioApk(studio: ApkModificationStudio, result: ApkStudioResult, hosts: Set<String>) {
+        updateStudioProgress(80, "Preparing APK rebuild")
+        Thread {
+            try {
+                val output = studio.rebuildAndSign(result, hosts) { percent, message ->
+                    updateStudioProgress(percent, message)
+                }
+                pendingSignedApk = output
+                runOnUiThread {
+                    val save = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/vnd.android.package-archive"
+                        putExtra(Intent.EXTRA_TITLE, "${result.packageName}-modified-signed.apk")
+                    }
+                    startActivityForResult(save, APK_STUDIO_SAVE_REQUEST)
+                }
+            } catch (error: Exception) {
+                updateStudioProgress(0, "Build/sign failed: ${error.message ?: error.javaClass.simpleName}")
+            }
+        }.start()
     }
 
     private fun exportReport() {
@@ -325,5 +457,7 @@ A Work Profile is not root access. Android still protects each app's private mem
         private const val MB = 1024.0 * 1024.0
         private const val APK_PICK_REQUEST = 4102
         private const val EXPORT_REQUEST = 4103
+        private const val APK_STUDIO_PICK_REQUEST = 4104
+        private const val APK_STUDIO_SAVE_REQUEST = 4105
     }
 }
