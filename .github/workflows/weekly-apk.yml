@@ -61,6 +61,16 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Build and stage Android Apktool runtime
+        if: github.event_name != 'schedule' || steps.bugs.outputs.count >= 10
+        run: |
+          git clone --depth 1 --branch v1.0.0 https://github.com/anirudhmalik/apktool-android.git "$RUNNER_TEMP/apktool-android"
+          cd "$RUNNER_TEMP/apktool-android"
+          gradle :brut.apktool:apktool-android:collectRuntimeJars
+          mkdir -p "$GITHUB_WORKSPACE/runtime-intelligence/app/libs/apktool-runtime"
+          cp brut.apktool/apktool-android/build/outputs/aar/apktool-android-release.aar "$GITHUB_WORKSPACE/runtime-intelligence/app/libs/apktool-android-1.0.0.aar"
+          cp brut.apktool/apktool-android/build/libs-bundle/*.jar "$GITHUB_WORKSPACE/runtime-intelligence/app/libs/apktool-runtime/"
+
       - name: Run tests and build debug APK
         if: github.event_name != 'schedule' || steps.bugs.outputs.count >= 10
         working-directory: runtime-intelligence
