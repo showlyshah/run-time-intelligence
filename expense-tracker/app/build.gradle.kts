@@ -9,8 +9,8 @@ android {
         applicationId = "com.sha.mymoney"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.3.8"
+        versionCode = 13
+        versionName = "0.3.9"
     }
     signingConfigs {
         create("release") {
