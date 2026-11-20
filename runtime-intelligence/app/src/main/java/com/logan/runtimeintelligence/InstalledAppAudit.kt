@@ -32,13 +32,15 @@ object InstalledAppAudit {
         output.append("This is manifest metadata, not a runtime or memory inspection.\n\n")
 
         val candidates = packages
-            .filter { it.applicationInfo != null }
-            .filter { (it.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0 }
+            .filter {
+                val appInfo = it.applicationInfo
+                appInfo != null && (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0
+            }
             .sortedBy { safeLabel(pm, it) }
             .take(maxApps)
 
         for (info in candidates) {
-            val app = info.applicationInfo
+            val app = info.applicationInfo ?: continue
             val label = safeLabel(pm, info)
             output.append("▶ $label\n")
             output.append("  Package: ${info.packageName}\n")
@@ -82,7 +84,8 @@ object InstalledAppAudit {
     @Suppress("DEPRECATION")
     private fun safeLabel(pm: PackageManager, info: PackageInfo): String =
         try {
-            pm.getApplicationLabel(info.applicationInfo).toString().lowercase(Locale.getDefault())
+            val appInfo = info.applicationInfo ?: return info.packageName
+            pm.getApplicationLabel(appInfo).toString().lowercase(Locale.getDefault())
                 .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
         } catch (_: Exception) {
             info.packageName
