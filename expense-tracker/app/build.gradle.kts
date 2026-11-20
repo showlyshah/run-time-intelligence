@@ -36,4 +36,5 @@ android {
 dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("androidx.dynamicanimation:dynamicanimation:1.0.0")
+    implementation("com.google.android.material:material:1.13.0")
 }
