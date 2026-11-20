@@ -33,6 +33,9 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import androidx.dynamicanimation.animation.DynamicAnimation
+import androidx.dynamicanimation.animation.SpringAnimation
+import androidx.dynamicanimation.animation.SpringForce
 
 private var BG = 0xFF080E1B.toInt()
 private var PANEL = 0xFF111D31.toInt()
@@ -162,12 +165,30 @@ class MainActivity:Activity(){
   GOLD=accent
   MUTED=if(dark)0xFF9CB2CE.toInt() else 0xFF53647A.toInt()
   COLORS=intArrayOf(accent,0xFF37C7F4.toInt(),0xFF8B9BFF.toInt(),0xFF54D6B0.toInt(),0xFFFFC857.toInt(),0xFFB58BFF.toInt(),0xFFFF7AA8.toInt(),0xFF66D9E8.toInt(),0xFF9AD86B.toInt(),0xFFFF9A65.toInt())
+  window.statusBarColor=BG;window.navigationBarColor=BG
+  @Suppress("DEPRECATION")
+  window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or if(dark)0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
  }
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
  private fun text(s:String,size:Float=15f,color:Int=if(BG==0xFFF2F6FC.toInt())0xFF172033.toInt() else Color.WHITE):TextView=TextView(this).apply{text=s;textSize=size;setTextColor(color);setPadding(dp(12),dp(9),dp(12),dp(9));typeface=if(size>=19f)Typeface.create("sans-serif-medium",Typeface.NORMAL) else Typeface.create("sans-serif",Typeface.NORMAL)}
  private fun rounded(color:Int,radius:Float=18f,stroke:Int=0):android.graphics.drawable.GradientDrawable=android.graphics.drawable.GradientDrawable().apply{setColor(color);cornerRadius=dp(radius.toInt()).toFloat();if(stroke!=0)setStroke(dp(1),stroke)}
- private fun button(s:String,action:()->Unit):Button=Button(this).apply{text=s;setTextColor(0xFF172033.toInt());textSize=13f;isAllCaps=false;typeface=Typeface.DEFAULT_BOLD;background=rounded(GOLD,16f);setPadding(dp(8),dp(3),dp(8),dp(3));setOnClickListener{action()}}
- private fun panel():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(8),dp(10),dp(8));background=rounded(PANEL,18f,0xFF34465F.toInt())}
+ private fun animateExpressive(view:View,pressed:Boolean){
+  val target=if(pressed)0.965f else 1f
+  SpringAnimation(view,DynamicAnimation.SCALE_X,target).apply{spring=SpringForce(target).apply{dampingRatio=0.58f;stiffness=SpringForce.STIFFNESS_MEDIUM};start()}
+  SpringAnimation(view,DynamicAnimation.SCALE_Y,target).apply{spring=SpringForce(target).apply{dampingRatio=0.58f;stiffness=SpringForce.STIFFNESS_MEDIUM};start()}
+ }
+ private fun expressiveTouch(view:View){
+  view.isHapticFeedbackEnabled=true
+  view.setOnTouchListener{v,event->
+   when(event.actionMasked){
+    MotionEvent.ACTION_DOWN->{animateExpressive(v,true);v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)}
+    MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->animateExpressive(v,false)
+   }
+   false
+  }
+ }
+ private fun button(s:String,action:()->Unit):Button=Button(this).apply{text=s;setTextColor(if(GOLD==0xFFFFC45E.toInt())0xFF172033.toInt() else Color.WHITE);textSize=14f;isAllCaps=false;typeface=Typeface.create("sans-serif-medium",Typeface.BOLD);background=rounded(GOLD,24f);elevation=dp(3).toFloat();setPadding(dp(12),dp(5),dp(12),dp(5));expressiveTouch(this);setOnClickListener{action()}}
+ private fun panel():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(12),dp(10),dp(12),dp(10));background=rounded(PANEL,26f,if(BG==0xFFF2F6FC.toInt())0xFFDCE5F2.toInt() else 0xFF263B59.toInt());elevation=dp(2).toFloat();expressiveTouch(this)}
  private fun money(v:Double)="₹"+String.format(Locale("en","IN"),"%.2f",v)
  private fun dateNow()=SimpleDateFormat("yyyy-MM-dd",Locale.US).format(Date())
  override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);applyTheme();store=Store(this);store.categories();if(intent.getBooleanExtra("open_about",false))tab=6;scheduleMonthlyBackup();scheduleBillReminders();scheduleVersionChecks();showUpdateNotificationIfAvailable();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),711);window.statusBarColor=BG;window.navigationBarColor=BG;@Suppress("DEPRECATION") window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;show()}
@@ -230,8 +251,8 @@ class MainActivity:Activity(){
  }
  private fun aboutPage(c:LinearLayout){
   c.addView(text("ABOUT THIS APP",12f,MUTED))
-  val hero=panel().apply{gravity=Gravity.CENTER;setPadding(dp(20),dp(24),dp(20),dp(24))}
-  hero.addView(ImageView(this).apply{setImageResource(com.sha.mymoney.R.mipmap.ic_money_logo);scaleType=ImageView.ScaleType.FIT_CENTER},LinearLayout.LayoutParams(dp(132),dp(132)))
+  val hero=panel().apply{gravity=Gravity.CENTER;setPadding(dp(20),dp(24),dp(20),dp(24));background=rounded(PANEL,34f,0xFF2C75C7.toInt())}
+  hero.addView(ImageView(this).apply{setImageResource(R.mipmap.ic_money_logo);scaleType=ImageView.ScaleType.CENTER_CROP},LinearLayout.LayoutParams(dp(148),dp(148)))
   hero.addView(text("LOGANTECH",25f,if(BG==0xFFF2F6FC.toInt())0xFF172033.toInt() else Color.WHITE).apply{gravity=Gravity.CENTER;typeface=Typeface.create("sans-serif-black",Typeface.BOLD)})
   hero.addView(text("EXPENSES TRACKER",14f,GOLD).apply{gravity=Gravity.CENTER})
   hero.addView(text("VIBE CODED BY POWER WIZARD LABZ",16f,0xFF72D6A8.toInt()).apply{gravity=Gravity.CENTER;setPadding(dp(4),dp(22),dp(4),dp(12));typeface=Typeface.create("sans-serif-medium",Typeface.BOLD)})
@@ -251,7 +272,7 @@ class MainActivity:Activity(){
    val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
    for(i in rowStart until rowStart+4){
     val selected=themeChoice==i
-    val chip=Button(this).apply{text=names[i];textSize=10f;isAllCaps=false;setTextColor(if(selected)Color.WHITE else MUTED);background=rounded(if(selected)GOLD else BG,13f);setPadding(dp(2),dp(2),dp(2),dp(2));minHeight=dp(46);setOnClickListener{getSharedPreferences("logantech_ui",MODE_PRIVATE).edit().putInt("theme_choice",i).apply();applyTheme();show()}}
+    val chip=Button(this).apply{text=names[i];textSize=10f;isAllCaps=false;setTextColor(if(selected&&GOLD!=0xFFFFC45E.toInt())Color.WHITE else if(selected)0xFF172033.toInt() else MUTED);background=rounded(if(selected)GOLD else BG,22f);setPadding(dp(2),dp(2),dp(2),dp(2));minHeight=dp(46);expressiveTouch(this);setOnClickListener{getSharedPreferences("logantech_ui",MODE_PRIVATE).edit().putInt("theme_choice",i).apply();applyTheme();show()}}
     row.addView(chip,LinearLayout.LayoutParams(0,dp(48),1f).apply{setMargins(dp(2),dp(3),dp(2),dp(3))})
    }
    chips.addView(row)
@@ -294,7 +315,7 @@ class MainActivity:Activity(){
   val greeting=if(now.get(Calendar.HOUR_OF_DAY)<12)"GOOD MORNING" else if(now.get(Calendar.HOUR_OF_DAY)<17)"GOOD AFTERNOON" else "GOOD EVENING"
   hero.addView(text(greeting+"  •  "+SimpleDateFormat("EEE, dd MMM",Locale.getDefault()).format(Date()),11f,MUTED))
   hero.addView(text("Your total balance",13f,MUTED))
-  hero.addView(text(money(balance),31f,GOLD))
+  hero.addView(text(money(balance),34f,GOLD).apply{typeface=Typeface.create("sans-serif-black",Typeface.BOLD)})
   val totalsRow=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
   totalsRow.addView(text("↗  "+money(totals(data,"Income"))+" income",13f,0xFF72D6A8.toInt()),LinearLayout.LayoutParams(0,-2,1f))
   totalsRow.addView(text("↘  "+money(totals(data,"Expense"))+" expense",13f,0xFFE58B7D.toInt()))
