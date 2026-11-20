@@ -267,7 +267,9 @@ class MainActivity : Activity() {
         panel.addView(infoText("Every permission starts unchecked. Select only permissions you want removed. Removing a permission can disable app features or cause runtime failures. The AD_ID permission is the Android advertising-ID opt-out signal on supported integrations; DEX SDK references are reviewed separately below."))
         result.permissions.forEach { permission ->
             val check = CheckBox(this).apply {
-                text = permission.name + if (permission.isAdvertisingId) " • Advertising ID permission" else ""
+                val (riskLabel, riskColor) = permissionRisk(permission.name)
+                text = "$riskLabel • " + permission.name + if (permission.isAdvertisingId) " • Advertising ID permission" else ""
+                setTextColor(riskColor)
                 textSize = 13f
                 setPadding(0, 4, 0, 4)
                 setOnCheckedChangeListener { _, checked ->
@@ -312,6 +314,31 @@ class MainActivity : Activity() {
             }
             .create()
         dialog.show()
+    }
+
+    private fun permissionRisk(name: String): Pair<String, Int> {
+        val highRisk = setOf(
+            "android.permission.CAMERA", "android.permission.RECORD_AUDIO",
+            "android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_BACKGROUND_LOCATION",
+            "android.permission.READ_CONTACTS", "android.permission.WRITE_CONTACTS",
+            "android.permission.READ_SMS", "android.permission.RECEIVE_SMS",
+            "android.permission.SEND_SMS", "android.permission.READ_CALL_LOG",
+            "android.permission.WRITE_CALL_LOG", "android.permission.READ_PHONE_STATE",
+            "android.permission.MANAGE_EXTERNAL_STORAGE", "android.permission.QUERY_ALL_PACKAGES",
+            "android.permission.REQUEST_INSTALL_PACKAGES"
+        )
+        val review = setOf(
+            "android.permission.ACCESS_COARSE_LOCATION", "android.permission.READ_MEDIA_IMAGES",
+            "android.permission.READ_MEDIA_VIDEO", "android.permission.READ_MEDIA_AUDIO",
+            "android.permission.POST_NOTIFICATIONS", "android.permission.PACKAGE_USAGE_STATS",
+            "android.permission.BLUETOOTH_CONNECT", "android.permission.NEARBY_WIFI_DEVICES",
+            "com.google.android.gms.permission.AD_ID"
+        )
+        return when {
+            name in highRisk -> "HIGH RISK" to Color.rgb(190, 25, 35)
+            name in review -> "REVIEW" to Color.rgb(210, 112, 0)
+            else -> "LOW RISK" to Color.rgb(35, 135, 65)
+        }
     }
 
     private fun rebuildStudioApk(
