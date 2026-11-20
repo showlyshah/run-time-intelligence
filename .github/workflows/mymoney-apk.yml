@@ -26,9 +26,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-      - name: Build temporary debug APK
+          cache-read-only: false
+      - name: Build and test temporary debug APK
         working-directory: expense-tracker
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        env:
+          JAVA_TOOL_OPTIONS: "-Xmx3g -XX:MaxMetaspaceSize=1g"
+        run: gradle :app:testDebugUnitTest :app:assembleDebug --build-cache --max-workers=2 --stacktrace
       - name: Upload installable test APK
         uses: actions/upload-artifact@v4
         with:
