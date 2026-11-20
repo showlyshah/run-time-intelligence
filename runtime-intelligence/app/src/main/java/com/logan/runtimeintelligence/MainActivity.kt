@@ -239,20 +239,21 @@ class MainActivity : Activity() {
             var received = 0L
             var sent = 0L
             for (networkType in intArrayOf(ConnectivityManager.TYPE_WIFI, ConnectivityManager.TYPE_MOBILE)) {
-                var stats: NetworkStats? = null
                 try {
-                    stats = manager.querySummaryForUid(networkType, null, start, end, uid)
-                    val bucket = NetworkStats.Bucket()
-                    while (stats.hasNextBucket()) {
-                        if (stats.getNextBucket(bucket)) {
-                            received += bucket.rxBytes
-                            sent += bucket.txBytes
+                    val stats = manager.queryDetailsForUid(networkType, null, start, end, uid)
+                    try {
+                        val bucket = NetworkStats.Bucket()
+                        while (stats.hasNextBucket()) {
+                            if (stats.getNextBucket(bucket)) {
+                                received += bucket.rxBytes
+                                sent += bucket.txBytes
+                            }
                         }
+                    } finally {
+                        stats.close()
                     }
                 } catch (_: Exception) {
                     // Network type may not be available on this device.
-                } finally {
-                    stats?.close()
                 }
             }
             if (received > 0 || sent > 0) {
