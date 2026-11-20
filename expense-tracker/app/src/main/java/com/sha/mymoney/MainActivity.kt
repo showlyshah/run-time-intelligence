@@ -73,6 +73,20 @@ class Store(c:android.content.Context):SQLiteOpenHelper(c,"mymoney.db",null,4) {
  fun bills():List<Bill>{val a=mutableListOf<Bill>();readableDatabase.rawQuery("SELECT id,title,amount,category,dueDate,frequency,account FROM bills ORDER BY dueDate,id",null).use{while(it.moveToNext())a+=Bill(it.getLong(0),it.getString(1),it.getDouble(2),it.getString(3),it.getString(4),it.getString(5),it.getString(6))};return a}
  fun saveBill(b:Bill){if(b.id==0L)writableDatabase.execSQL("INSERT INTO bills(title,amount,category,dueDate,frequency,account) VALUES(?,?,?,?,?,?)",arrayOf(b.title,b.amount,b.category,b.dueDate,b.frequency,b.account))else writableDatabase.execSQL("UPDATE bills SET title=?,amount=?,category=?,dueDate=?,frequency=?,account=? WHERE id=?",arrayOf(b.title,b.amount,b.category,b.dueDate,b.frequency,b.account,b.id))}
  fun deleteBill(id:Long){writableDatabase.delete("bills","id=?",arrayOf(id.toString()))}
+ fun restoreTransactions(rows:List<Tx>){
+  val db=writableDatabase
+  db.beginTransaction()
+  try{
+   db.execSQL("INSERT OR IGNORE INTO accounts(name,opening) VALUES('Cash',0)")
+   db.delete("tx",null,null)
+   rows.forEach{t->
+    db.execSQL("INSERT OR IGNORE INTO categories(name,kind) VALUES(?,?)",arrayOf(t.category,if(t.kind=="Income")"Income" else "Expense"))
+    db.execSQL("INSERT OR IGNORE INTO accounts(name,opening) VALUES(?,0)",arrayOf(t.account))
+    db.execSQL("INSERT INTO tx(title,amount,kind,category,date,account) VALUES(?,?,?,?,?,?)",arrayOf(t.title,t.amount,t.kind,t.category,t.date,t.account))
+   }
+   db.setTransactionSuccessful()
+  }finally{db.endTransaction()}
+ }
  fun createBackupJson():String {
   val root=JSONObject().put("app","LoganTech Expenses Tracker").put("formatVersion",1).put("createdAt",java.time.Instant.now().toString())
   root.put("transactions",JSONArray().apply{all().forEach{t->put(JSONObject().put("id",t.id).put("title",t.title).put("amount",t.amount).put("kind",t.kind).put("category",t.category).put("date",t.date).put("account",t.account))}})
@@ -343,8 +357,44 @@ class MainActivity:Activity(){
   AlertDialog.Builder(this).setTitle("Export & backup").setItems(options){_,which->when(which){0->createExportFile("pdf");1->createExportFile("csv");2->createExportFile("json");3->chooseBackupToRestore();4->shareSummaryNote()}}.setNegativeButton("Cancel",null).show()
  }
  private fun chooseBackupToRestore(){
-  val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type="application/json";addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)}
+  val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type="*/*";addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)}
   try{startActivityForResult(intent,712)}catch(e:Exception){Toast.makeText(this,"Could not open file picker: "+e.message,Toast.LENGTH_LONG).show()}
+ }
+ private fun parseCsvRows(source:String):List<List<String>>{
+  val rows=mutableListOf<List<String>>();var row=mutableListOf<String>();val field=StringBuilder();var quoted=false;var i=0
+  while(i<source.length){val ch=source[i];when{
+   quoted&&ch=='"'&&i+1<source.length&&source[i+1]=='"'->{field.append('"');i++}
+   ch=='"'->{quoted=!quoted}
+   ch==','&&!quoted->{row.add(field.toString());field.setLength(0)}
+   (ch=='\n'||ch=='\r')&&!quoted->{row.add(field.toString());field.setLength(0);if(row.any{it.isNotBlank()})rows.add(row);row=mutableListOf();if(ch=='\r'&&i+1<source.length&&source[i+1]=='\n')i++}
+   else->field.append(ch)
+  };i++}
+  if(field.isNotEmpty()||row.isNotEmpty()){row.add(field.toString());if(row.any{it.isNotBlank()})rows.add(row)}
+  require(!quoted){"CSV backup contains an unfinished quoted field."}
+  return rows
+ }
+ private fun confirmLegacyCsvRestore(csv:String){
+  val rows=parseCsvRows(csv)
+  require(rows.isNotEmpty()){"CSV backup is empty."}
+  val headers=rows.first().map{it.trim().lowercase(Locale.ROOT)}
+  fun col(vararg names:String):Int=names.firstNotNullOfOrNull{name->headers.indexOf(name).takeIf{it>=0}}?:-1
+  val dateCol=col("date");val typeCol=col("type");val categoryCol=col("category");val titleCol=col("description","title");val amountCol=col("amount");val accountCol=col("account")
+  require(listOf(dateCol,typeCol,categoryCol,titleCol,amountCol).all{it>=0}){"Unsupported CSV backup. Choose a LoganTech transaction CSV or a full JSON backup."}
+  val restored=rows.drop(1).filter{it.any(String::isNotBlank)}.mapIndexed{index,r->
+   fun value(i:Int)=r.getOrNull(i)?.trim().orEmpty()
+   val date=value(dateCol);val kind=value(typeCol);val category=value(categoryCol);val title=value(titleCol);val amount=value(amountCol).replace(",","").toDoubleOrNull();val account=if(accountCol>=0)value(accountCol).ifBlank{"Cash"}else "Cash"
+   require(kind=="Income"||kind=="Expense"){"Invalid type on CSV row "+(index+2)}
+   require(amount!=null&&amount.isFinite()&&amount>0){"Invalid amount on CSV row "+(index+2)}
+   LocalDate.parse(date)
+   require(category.isNotBlank()&&title.isNotBlank()){"Missing details on CSV row "+(index+2)}
+   Tx(0L,title,amount,kind,category,date,account)
+  }
+  AlertDialog.Builder(this).setTitle("Restore older CSV backup?")
+   .setMessage("This CSV contains transactions only. It will replace the current transaction list and keep your existing accounts, budgets and bills. Missing accounts and categories will be added automatically. For a complete restore of all data, use a full JSON backup.")
+   .setPositiveButton("Restore transactions"){_,_->
+    try{store.restoreTransactions(restored);Toast.makeText(this,"Restored "+restored.size+" transactions from CSV.",Toast.LENGTH_LONG).show();show()}
+    catch(e:Exception){Toast.makeText(this,"CSV restore failed: "+e.message,Toast.LENGTH_LONG).show()}
+   }.setNegativeButton("Cancel",null).show()
  }
  private fun confirmRestore(json:String){
   AlertDialog.Builder(this).setTitle("Restore backup?")
@@ -373,7 +423,7 @@ class MainActivity:Activity(){
    catch(e:Exception){Toast.makeText(this,"Export failed: "+e.message,Toast.LENGTH_LONG).show()}
   }
   if(requestCode==712&&resultCode==Activity.RESULT_OK){val uri=data?.data?:return
-   try{val json=contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use{it.readText()}?:throw java.io.IOException("Could not read selected file");confirmRestore(json)}
+   try{val content=contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use{it.readText()}?:throw java.io.IOException("Could not read backup");if(content.trimStart().startsWith("{"))confirmRestore(content) else confirmLegacyCsvRestore(content)}
    catch(e:Exception){Toast.makeText(this,"Could not read backup: "+e.message,Toast.LENGTH_LONG).show()}
   }
  }
