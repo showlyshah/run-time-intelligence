@@ -86,14 +86,45 @@ class MainActivity:Activity(){
  private fun panel():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(8),dp(10),dp(8));background=rounded(PANEL,18f,0xFF34465F.toInt())}
  private fun money(v:Double)="₹"+String.format(Locale("en","IN"),"%.2f",v)
  private fun dateNow()=SimpleDateFormat("yyyy-MM-dd",Locale.US).format(Date())
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);store=Store(this);scheduleMonthlyBackup();scheduleBillReminders();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),711);window.statusBarColor=BG;window.navigationBarColor=BG;show()}
+ override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);store=Store(this);scheduleMonthlyBackup();scheduleBillReminders();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),711);window.statusBarColor=BG;window.navigationBarColor=BG;@Suppress("DEPRECATION") window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;show()}
  private fun scheduleMonthlyBackup(){val request=PeriodicWorkRequestBuilder<MonthlyBackupWorker>(30,TimeUnit.DAYS).build();WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork("mymoney_monthly_backup",ExistingPeriodicWorkPolicy.KEEP,request)}
  private fun scheduleBillReminders(){val request=PeriodicWorkRequestBuilder<BillReminderWorker>(24,TimeUnit.HOURS).build();WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork("logantech_bill_reminders",ExistingPeriodicWorkPolicy.KEEP,request)}
- private fun show(){root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(BG);setPadding(dp(12),dp(10),dp(12),dp(4))}
-  val head=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL};head.addView(text("💠 LoganTech Expenses Tracker",20f,GOLD),LinearLayout.LayoutParams(0,-2,1f));head.addView(text("SMART FINANCE",10f,MUTED));root.addView(head)
-  val body=ScrollView(this);val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};body.addView(content);root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
+ private fun show(){
+  root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(BG);setPadding(dp(12),dp(10),dp(12),dp(10))}
+  val head=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
+  head.addView(text("💠 LoganTech Expenses Tracker",20f,GOLD),LinearLayout.LayoutParams(0,-2,1f))
+  head.addView(text("SMART FINANCE",10f,MUTED));root.addView(head)
+  val body=ScrollView(this).apply{clipToPadding=false;isFillViewport=false}
+  val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+  body.addView(content);root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
   when(tab){0->records(content);1->analysis(content);2->budgetsPage(content);3->accountsPage(content);4->categoriesPage(content);5->billsPage(content)}
-  val nav=LinearLayout(this).apply{background=rounded(PANEL,20f);gravity=Gravity.CENTER};listOf("📒\nRecords","📊\nAnalysis","🎯\nBudgets","🏦\nAccounts","🎨\nCategories","🧾\nBills").forEachIndexed{i,n->val b=TextView(this).apply{text=n;textSize=10f;gravity=Gravity.CENTER;setTextColor(if(tab==i)GOLD else MUTED);setTypeface(null,if(tab==i)Typeface.BOLD else Typeface.NORMAL);setPadding(dp(2),dp(9),dp(2),dp(9));setOnClickListener{tab=i;chosenCategory=null;show()}};nav.addView(b,LinearLayout.LayoutParams(0,-2,1f))};root.addView(nav);setContentView(root)
+  val nav=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;background=rounded(PANEL,20f);setPadding(dp(5),dp(5),dp(5),dp(5))}
+  val labels=listOf("📒  Records","📊  Analysis","🎯  Budgets","🏦  Accounts","🎨  Categories","🧾  Bills")
+  for(rowIndex in 0..1){
+   val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER}
+   for(column in 0..2){
+    val index=rowIndex*3+column
+    val item=TextView(this).apply{
+     text=labels[index];textSize=11f;gravity=Gravity.CENTER;isSingleLine=true
+     setTextColor(if(tab==index)GOLD else MUTED)
+     setTypeface(null,if(tab==index)Typeface.BOLD else Typeface.NORMAL)
+     setPadding(dp(3),dp(5),dp(3),dp(5));minHeight=dp(44)
+     background=if(tab==index)rounded(0xFF34445B.toInt(),12f) else null
+     setOnClickListener{tab=index;chosenCategory=null;show()}
+    }
+    row.addView(item,LinearLayout.LayoutParams(0,dp(46),1f).apply{setMargins(dp(2),dp(1),dp(2),dp(1))})
+   }
+   nav.addView(row,LinearLayout.LayoutParams(-1,dp(46)))
+  }
+  root.addView(nav,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(8)})
+  setContentView(root)
+  root.setOnApplyWindowInsetsListener{view,insets->
+   val left=insets.systemWindowInsetLeft;val top=insets.systemWindowInsetTop
+   val right=insets.systemWindowInsetRight;val bottom=insets.systemWindowInsetBottom
+   view.setPadding(dp(12)+left,dp(10)+top,dp(12)+right,dp(10)+bottom)
+   insets.consumeSystemWindowInsets()
+  }
+  root.requestApplyInsets()
  }
  private fun totals(list:List<Tx>,kind:String)=list.filter{it.kind==kind}.sumOf{it.amount}
  private fun records(c:LinearLayout){
