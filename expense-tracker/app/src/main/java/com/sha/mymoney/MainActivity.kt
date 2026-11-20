@@ -84,12 +84,85 @@ class MainActivity:Activity(){
   val nav=LinearLayout(this).apply{background=rounded(PANEL,20f);gravity=Gravity.CENTER};listOf("📒\\nRecords","📊\\nAnalysis","🎯\\nBudgets","🏦\\nAccounts","🎨\\nCategories").forEachIndexed{i,n->val b=TextView(this).apply{text=n;textSize=10f;gravity=Gravity.CENTER;setTextColor(if(tab==i)GOLD else MUTED);setTypeface(null,if(tab==i)Typeface.BOLD else Typeface.NORMAL);setPadding(dp(2),dp(9),dp(2),dp(9));setOnClickListener{tab=i;chosenCategory=null;show()}};nav.addView(b,LinearLayout.LayoutParams(0,-2,1f))};root.addView(nav);setContentView(root)
  }
  private fun totals(list:List<Tx>,kind:String)=list.filter{it.kind==kind}.sumOf{it.amount}
- private fun records(c:LinearLayout){val data=store.all();val card=panel();card.addView(text("TOTAL BALANCE",12f,MUTED));val opening=store.accounts().sumOf{it.opening};card.addView(text(money(opening+totals(data,"Income")-totals(data,"Expense")),30f,GOLD));val row=LinearLayout(this);row.addView(text("Income  "+money(totals(data,"Income")),14f,0xFF72D6A8.toInt()),LinearLayout.LayoutParams(0,-2,1f));row.addView(text("Expense  "+money(totals(data,"Expense")),14f,0xFFE58B7D.toInt()));card.addView(row);c.addView(card);c.addView(button("+ Add transaction"){editTransaction(null)});c.addView(button("📤  Export & backup"){exportDialog()});c.addView(text("🔄 Automatic local backup runs about every 30 days.",11f,MUTED))
-  c.addView(text("Recent transactions",19f,GOLD));if(data.isEmpty())c.addView(text("No entries yet. Add your first income or expense."));data.forEach{t->val p=panel();p.addView(text(categoryIcon(t.category)+"  "+t.title+"  •  "+t.category,16f,COLORS[(store.categories().indexOf(t.category).coerceAtLeast(0))%COLORS.size]));p.addView(text(t.date+"  •  "+t.account+"     "+(if(t.kind=="Income")"+" else "−")+money(t.amount),14f,if(t.kind=="Income")0xFF72D6A8.toInt() else 0xFFE58B7D.toInt()));p.setOnClickListener{editTransaction(t)};p.setOnLongClickListener{AlertDialog.Builder(this).setMessage("Delete this transaction?").setPositiveButton("Delete"){_,_->store.remove(t.id);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)}}
- private fun editTransaction(old:Tx?){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)}
+ private fun records(c:LinearLayout){
+  val data=store.all()
+  val opening=store.accounts().sumOf{it.opening}
+  val balance=opening+totals(data,"Income")-totals(data,"Expense")
+  val now=Calendar.getInstance()
+  val monthData=data.filter{t->try{val f=SimpleDateFormat("yyyy-MM-dd",Locale.US);val d=Calendar.getInstance().apply{time=f.parse(t.date)!!};d.get(Calendar.YEAR)==now.get(Calendar.YEAR)&&d.get(Calendar.MONTH)==now.get(Calendar.MONTH)}catch(_:Exception){false}}
+  val monthIncome=totals(monthData,"Income")
+  val monthExpense=totals(monthData,"Expense")
+  val savings=monthIncome-monthExpense
+  val savingsRate=if(monthIncome>0)(savings/monthIncome*100).toInt() else 0
+  val hero=panel()
+  val greeting=if(now.get(Calendar.HOUR_OF_DAY)<12)"GOOD MORNING" else if(now.get(Calendar.HOUR_OF_DAY)<17)"GOOD AFTERNOON" else "GOOD EVENING"
+  hero.addView(text(greeting+"  •  "+SimpleDateFormat("EEE, dd MMM",Locale.getDefault()).format(Date()),11f,MUTED))
+  hero.addView(text("Your total balance",13f,MUTED))
+  hero.addView(text(money(balance),31f,GOLD))
+  val totalsRow=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
+  totalsRow.addView(text("↗  "+money(totals(data,"Income"))+" income",13f,0xFF72D6A8.toInt()),LinearLayout.LayoutParams(0,-2,1f))
+  totalsRow.addView(text("↘  "+money(totals(data,"Expense"))+" expense",13f,0xFFE58B7D.toInt()))
+  hero.addView(totalsRow)
+  c.addView(hero)
+  val month=panel()
+  month.addView(text("THIS MONTH",11f,MUTED))
+  val monthRow=LinearLayout(this)
+  monthRow.addView(LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;addView(text("Income",12f,MUTED));addView(text(money(monthIncome),17f,0xFF72D6A8.toInt()))},LinearLayout.LayoutParams(0,-2,1f))
+  monthRow.addView(LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;addView(text("Spent",12f,MUTED));addView(text(money(monthExpense),17f,0xFFE58B7D.toInt()))},LinearLayout.LayoutParams(0,-2,1f))
+  monthRow.addView(LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;addView(text("Saved",12f,MUTED));addView(text(money(savings),17f,if(savings>=0)GOLD else 0xFFE58B7D.toInt()))},LinearLayout.LayoutParams(0,-2,1f))
+  month.addView(monthRow)
+  month.addView(text(if(monthIncome>0)"Savings rate  •  $savingsRate%" else "Add income to see your savings rate",11f,MUTED))
+  c.addView(month)
+  val budgets=store.budgets()
+  val alerts=budgets.mapNotNull{b->val spent=data.filter{it.kind=="Expense"&&it.category==b.category&&inBudgetPeriod(it.date,b.period)}.sumOf{it.amount};val pct=if(b.amount>0)(spent/b.amount*100).toInt() else 0;if(pct>=80)"${b.category}: $pct% of budget used" else null}
+  if(alerts.isNotEmpty()){
+   val warning=panel()
+   warning.addView(text("⚠  BUDGET WATCH",12f,0xFFFFB86B.toInt()))
+   alerts.take(3).forEach{warning.addView(text(it,13f,if((it.substringAfterLast(" ").removeSuffix("%").toIntOrNull()?:0)>=100)0xFFFF8A8A.toInt() else MUTED))}
+   c.addView(warning)
+  }
+  val actions=LinearLayout(this).apply{gravity=Gravity.CENTER}
+  actions.addView(button("＋ Expense"){editTransaction(null,"Expense")},LinearLayout.LayoutParams(0,-2,1f).apply{setMargins(0,0,dp(5),0)})
+  actions.addView(button("＋ Income"){editTransaction(null,"Income")},LinearLayout.LayoutParams(0,-2,1f).apply{setMargins(dp(5),0,0,0)})
+  c.addView(actions)
+  c.addView(button("📤  Export & backup"){exportDialog()})
+  val prefs=getSharedPreferences("mymoney_backup",MODE_PRIVATE)
+  val last=prefs.getLong("last_backup_time",0L)
+  val backupStatus=panel()
+  backupStatus.addView(text("🔄 AUTOMATIC BACKUP",11f,MUTED))
+  backupStatus.addView(text(if(last>0)"Last successful backup  •  "+SimpleDateFormat("dd MMM yyyy, hh:mm a",Locale.getDefault()).format(Date(last)) else "First automatic backup is scheduled; it runs about every 30 days.",13f,if(last>0)0xFF72D6A8.toInt() else MUTED))
+  if(prefs.getString("backup_state","")=="retrying")backupStatus.addView(text("Previous attempt needs a retry. Your data remains on this device.",11f,0xFFFFB86B.toInt()))
+  c.addView(backupStatus)
+  c.addView(text("Recent transactions",19f,GOLD))
+  val search=EditText(this).apply{hint="Search title, category, account or date";setSingleLine(true);textSize=14f;setTextColor(Color.WHITE);setHintTextColor(MUTED);setPadding(dp(14),dp(10),dp(14),dp(10));background=rounded(PANEL,14f)}
+  c.addView(search)
+  val listHost=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+  c.addView(listHost)
+  renderTransactions(listHost,data,"")
+  search.addTextChangedListener(object:android.text.TextWatcher{
+   override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
+   override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){renderTransactions(listHost,data,s?.toString().orEmpty())}
+   override fun afterTextChanged(s:android.text.Editable?){}
+  })
+ }
+ private fun renderTransactions(host:LinearLayout,data:List<Tx>,query:String){
+  host.removeAllViews()
+  val q=query.trim().lowercase(Locale.ROOT)
+  val shown=if(q.isBlank())data else data.filter{t->listOf(t.title,t.category,t.account,t.date,t.kind,t.amount.toString()).any{v->v.lowercase(Locale.ROOT).contains(q)}}
+  if(shown.isEmpty()){host.addView(text(if(q.isBlank())"No entries yet. Add your first income or expense." else "No transactions match “$query”.",13f,MUTED));return}
+  shown.forEach{t->
+   val p=panel()
+   p.addView(text(categoryIcon(t.category)+"  "+t.title+"  •  "+t.category,15f,COLORS[(store.categories().indexOf(t.category).coerceAtLeast(0))%COLORS.size]))
+   p.addView(text(t.date+"  •  "+t.account+"     "+(if(t.kind=="Income")"+" else "−")+money(t.amount),13f,if(t.kind=="Income")0xFF72D6A8.toInt() else 0xFFE58B7D.toInt()))
+   p.setOnClickListener{editTransaction(t)}
+   p.setOnLongClickListener{AlertDialog.Builder(this).setMessage("Delete this transaction?").setPositiveButton("Delete"){_,_->store.remove(t.id);show()}.setNegativeButton("Cancel",null).show();true}
+   host.addView(p)
+  }
+ }
+ private fun editTransaction(old:Tx?,defaultKind:String="Expense"){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)}
   val title=EditText(this).apply{hint="Description";setText(old?.title?:"")}
   val amount=EditText(this).apply{hint="Amount";inputType=8194;setText(if(old==null)"" else old.amount.toString())}
-  val kind=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,listOf("Expense","Income"));setSelection(if(old?.kind=="Income")1 else 0)}
+  val kind=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,listOf("Expense","Income"));setSelection(if((old?.kind?:defaultKind)=="Income")1 else 0)}
   val cats=store.categories().ifEmpty{listOf("Other")}
   val cat=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,cats);setSelection(cats.indexOf(old?.category).coerceAtLeast(0))}
   val accs=store.accounts().map{it.name}.ifEmpty{listOf("Cash")}
@@ -101,7 +174,7 @@ class MainActivity:Activity(){
  private fun validDate(s:String):Boolean=try{val f=SimpleDateFormat("yyyy-MM-dd",Locale.US);f.isLenient=false;f.parse(s)!=null}catch(_:Exception){false}
  private fun filtered():List<Tx>{val now=Calendar.getInstance();return store.all().filter{t->try{val f=SimpleDateFormat("yyyy-MM-dd",Locale.US);f.isLenient=false;val x=Calendar.getInstance().apply{time=f.parse(t.date)!!};when(period){"Day"->now.get(Calendar.YEAR)==x.get(Calendar.YEAR)&&now.get(Calendar.DAY_OF_YEAR)==x.get(Calendar.DAY_OF_YEAR);"Week"->now.get(Calendar.YEAR)==x.get(Calendar.YEAR)&&now.get(Calendar.WEEK_OF_YEAR)==x.get(Calendar.WEEK_OF_YEAR);"Year"->now.get(Calendar.YEAR)==x.get(Calendar.YEAR);else->now.get(Calendar.YEAR)==x.get(Calendar.YEAR)&&now.get(Calendar.MONTH)==x.get(Calendar.MONTH)}}catch(_:Exception){false}}}
  private fun analysis(c:LinearLayout){c.addView(text("📊  Spending insights",22f,GOLD));val r=LinearLayout(this);listOf("Day","Week","Month","Year").forEach{val b=button(it){period=it;show()};b.textSize=11f;r.addView(b,LinearLayout.LayoutParams(0,-2,1f).apply{setMargins(dp(2),0,dp(2),0)})};c.addView(r);val data=filtered().filter{it.kind=="Expense"};val total=data.sumOf{it.amount};val summary=panel();summary.addView(text("TOTAL SPENDING",11f,MUTED));summary.addView(text(money(total),29f,GOLD));summary.addView(text(period+" overview  •  "+data.size+" transactions",12f,MUTED));c.addView(summary);val grouped=data.groupBy{it.category}.mapValues{e->e.value.sumOf{it.amount}}.toList().sortedByDescending{it.second};if(grouped.isEmpty())c.addView(text("🌱  No expenses in this period yet. Add a transaction to see your chart."))else{val chart=PieView(this,grouped.toMap()){selected->val txs=data.filter{it.category==selected};AlertDialog.Builder(this).setTitle(categoryIcon(selected)+"  "+selected).setItems(txs.map{it.date+"  "+it.title+"  "+money(it.amount)}.toTypedArray(),null).setPositiveButton("Close",null).show()};c.addView(chart,LinearLayout.LayoutParams(-1,dp(260)));c.addView(text("CATEGORY BREAKDOWN",12f,MUTED));grouped.forEachIndexed{i,e->val p=panel();p.orientation=LinearLayout.HORIZONTAL;p.gravity=Gravity.CENTER_VERTICAL;p.addView(text(categoryIcon(e.first),23f));val details=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};details.addView(text(e.first,15f,COLORS[i%COLORS.size]));details.addView(text(((e.second/total)*100).toInt().toString()+"% of spending",11f,MUTED));p.addView(details,LinearLayout.LayoutParams(0,-2,1f));p.addView(text(money(e.second),14f,Color.WHITE));p.setOnClickListener{chart.performClick()};c.addView(p)}}}
- private fun budgetsPage(c:LinearLayout){c.addView(text("Budgets",22f,GOLD));c.addView(button("+ Set / update budget"){budgetDialog(null)});val list=store.all();store.budgets().forEach{b->val spent=list.filter{it.kind=="Expense"&&it.category==b.category&&inBudgetPeriod(it.date,b.period)}.sumOf{it.amount};val pct=if(b.amount>0)(spent/b.amount*100).toInt() else 0;val p=panel();p.addView(text(categoryIcon(b.category)+"  "+b.category+" • "+b.period,17f,COLORS[(store.categories().indexOf(b.category).coerceAtLeast(0))%COLORS.size]));p.addView(text(money(spent)+" spent of "+money(b.amount),14f));val bar=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply{max=100;progress=pct.coerceIn(0,100);progressTintList=android.content.res.ColorStateList.valueOf(if(pct>=100)0xFFE58B7D.toInt() else GOLD)};p.addView(bar,LinearLayout.LayoutParams(-1,dp(12)));p.addView(text(if(pct>=100)"Budget exceeded" else "$pct% used",12f,if(pct>=100)0xFFE58B7D.toInt() else MUTED));p.setOnClickListener{budgetDialog(b)};p.setOnLongClickListener{AlertDialog.Builder(this).setMessage("Delete this budget?").setPositiveButton("Delete"){_,_->store.deleteBudget(b.id);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)};if(store.budgets().isEmpty())c.addView(text("Create a category budget and track spending against it."))}
+ private fun budgetsPage(c:LinearLayout){c.addView(text("Budgets",22f,GOLD));c.addView(button("+ Set / update budget"){budgetDialog(null)});val list=store.all();store.budgets().forEach{b->val spent=list.filter{it.kind=="Expense"&&it.category==b.category&&inBudgetPeriod(it.date,b.period)}.sumOf{it.amount};val pct=if(b.amount>0)(spent/b.amount*100).toInt() else 0;val p=panel();p.addView(text(categoryIcon(b.category)+"  "+b.category+" • "+b.period,17f,COLORS[(store.categories().indexOf(b.category).coerceAtLeast(0))%COLORS.size]));p.addView(text(money(spent)+" spent of "+money(b.amount),14f));val bar=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply{max=100;progress=pct.coerceIn(0,100);progressTintList=android.content.res.ColorStateList.valueOf(if(pct>=100)0xFFE58B7D.toInt() else if(pct>=80)0xFFFFB86B.toInt() else GOLD)};p.addView(bar,LinearLayout.LayoutParams(-1,dp(12)));p.addView(text(if(pct>=100)"⚠ Budget exceeded" else if(pct>=80)"⚠ $pct% used • getting close" else "$pct% used",12f,if(pct>=100)0xFFE58B7D.toInt() else MUTED));p.setOnClickListener{budgetDialog(b)};p.setOnLongClickListener{AlertDialog.Builder(this).setMessage("Delete this budget?").setPositiveButton("Delete"){_,_->store.deleteBudget(b.id);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)};if(store.budgets().isEmpty())c.addView(text("Create a category budget and track spending against it."))}
  private fun inBudgetPeriod(date:String,p:String):Boolean=try{val f=SimpleDateFormat("yyyy-MM-dd",Locale.US);val d=Calendar.getInstance().apply{time=f.parse(date)!!};val n=Calendar.getInstance();when(p){"Week"->d.get(Calendar.YEAR)==n.get(Calendar.YEAR)&&d.get(Calendar.WEEK_OF_YEAR)==n.get(Calendar.WEEK_OF_YEAR);"Year"->d.get(Calendar.YEAR)==n.get(Calendar.YEAR);else->d.get(Calendar.YEAR)==n.get(Calendar.YEAR)&&d.get(Calendar.MONTH)==n.get(Calendar.MONTH)}}catch(_:Exception){false}
  private fun budgetDialog(old:Budget?){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)};val cats=store.categories().filter{it!="Salary"}.ifEmpty{listOf("Other")};val cat=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,cats);setSelection(cats.indexOf(old?.category).coerceAtLeast(0))};val amount=EditText(this).apply{hint="Budget amount";inputType=8194;setText(old?.amount?.toString()?:"")};val period=Spinner(this).apply{adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,listOf("Month","Week","Year"));setSelection(listOf("Month","Week","Year").indexOf(old?.period?: "Month"))};box.addView(cat);box.addView(amount);box.addView(period);AlertDialog.Builder(this).setTitle("Category budget").setView(box).setPositiveButton("Save"){_,_->val v=amount.text.toString().toDoubleOrNull();if(v!=null&&v>0){store.saveBudget(old?.id?:0L,cat.selectedItem.toString(),v,period.selectedItem.toString());show()}else Toast.makeText(this,"Enter a valid budget",Toast.LENGTH_SHORT).show()}.setNegativeButton("Cancel",null).show()}
  private fun accountsPage(c:LinearLayout){c.addView(text("Accounts",22f,GOLD));c.addView(button("+ Add account"){accountDialog(null)});store.accounts().forEach{a->val balance=a.opening+store.all().filter{it.account==a.name&&it.kind=="Income"}.sumOf{it.amount}-store.all().filter{it.account==a.name&&it.kind=="Expense"}.sumOf{it.amount};val p=panel();p.addView(text(categoryIcon(a.name)+"  "+a.name,17f,GOLD));p.addView(text("Current balance  "+money(balance),15f,GOLD));p.addView(text("Opening balance  "+money(a.opening),12f,MUTED));p.setOnClickListener{accountDialog(a)};p.setOnLongClickListener{if(a.name=="Cash"){Toast.makeText(this,"The default Cash account cannot be deleted",Toast.LENGTH_SHORT).show()}else AlertDialog.Builder(this).setMessage("Delete account? Existing transactions will remain but be assigned to Cash.").setPositiveButton("Delete"){_,_->store.all().filter{it.account==a.name}.forEach{store.save(it.copy(account="Cash"))};store.deleteAccount(a.id);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)}}
@@ -193,7 +266,7 @@ class MonthlyBackupWorker(context:android.content.Context,params:androidx.work.W
  }
  private fun saveBackup(name:String,mime:String,bytes:ByteArray){
   if(android.os.Build.VERSION.SDK_INT>=29){
-   val values=ContentValues().apply{put(MediaStore.MediaColumns.DISPLAY_NAME,name);put(MediaStore.MediaColumns.MIME_TYPE,mime);put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/MyMoneyBackups")}
+   val values=ContentValues().apply{put(MediaStore.MediaColumns.DISPLAY_NAME,name);put(MediaStore.MediaColumns.MIME_TYPE,mime);put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/LoganTechExpensesBackups")}
    val uri=applicationContext.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values)?:throw java.io.IOException("Could not create backup file")
    applicationContext.contentResolver.openOutputStream(uri)?.use{it.write(bytes)}?:throw java.io.IOException("Could not write backup file")
   }else{
