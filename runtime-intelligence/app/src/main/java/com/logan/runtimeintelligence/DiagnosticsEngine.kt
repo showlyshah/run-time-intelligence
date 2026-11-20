@@ -126,26 +126,28 @@ class DiagnosticsEngine(private val context: Context) {
         p.waitFor() == 0 && output.contains("uid=0")
     }.getOrDefault(false)
 
-    private fun rootProcessStats(packageName: String): Map<String, String>? = runCatching {
-        val script = "pidof '$packageName' | awk '{print \$1}'"
-        val pidResult = Runtime.getRuntime().exec(arrayOf("su", "-c", script))
-        val pid = pidResult.inputStream.bufferedReader().readText().trim().lineSequence().firstOrNull()
-        pidResult.waitFor()
-        if (pid.isNullOrBlank()) return null
-        val read = Runtime.getRuntime().exec(arrayOf("su", "-c", "cat /proc/$pid/status"))
-        val text = read.inputStream.bufferedReader().readText()
-        read.waitFor()
-        val values = mutableMapOf("pid" to pid)
-        text.lineSequence().forEach { line ->
-            val parts = line.split(":", limit = 2)
-            if (parts.size == 2) {
-                val key = parts[0].trim()
-                val value = parts[1].trim().substringBefore(" kB").trim()
-                if (key in setOf("VmRSS", "VmPSS", "VmData", "RssFile", "State")) values[key] = value
+    private fun rootProcessStats(packageName: String): Map<String, String>? {
+        return runCatching {
+            val script = "pidof '$packageName' | awk '{print \\$1}'"
+            val pidResult = Runtime.getRuntime().exec(arrayOf("su", "-c", script))
+            val pid = pidResult.inputStream.bufferedReader().readText().trim().lineSequence().firstOrNull()
+            pidResult.waitFor()
+            if (pid.isNullOrBlank()) return@runCatching null
+            val read = Runtime.getRuntime().exec(arrayOf("su", "-c", "cat /proc/$pid/status"))
+            val text = read.inputStream.bufferedReader().readText()
+            read.waitFor()
+            val values = mutableMapOf("pid" to pid)
+            text.lineSequence().forEach { line ->
+                val parts = line.split(":", limit = 2)
+                if (parts.size == 2) {
+                    val key = parts[0].trim()
+                    val value = parts[1].trim().substringBefore(" kB").trim()
+                    if (key in setOf("VmRSS", "VmPSS", "VmData", "RssFile", "State")) values[key] = value
+                }
             }
-        }
-        values
-    }.getOrNull()
+            values
+        }.getOrNull()
+    }
 
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
