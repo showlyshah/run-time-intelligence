@@ -20,6 +20,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    packaging {
+        jniLibs { useLegacyPackaging = true }
+        resources.excludes += setOf("prebuilt/linux/**", "prebuilt/macosx/**", "prebuilt/windows/**")
+    }
+    androidResources { noCompress += "apk" }
+
     kotlinOptions {
         jvmTarget = "17"
     }
@@ -27,4 +33,7 @@ android {
 
 dependencies {
     debugImplementation(project(":debug-sdk"))
+    implementation(files("libs/apktool-android-1.0.0.aar"))
+    implementation(fileTree(mapOf("dir" to "libs/apktool-runtime", "include" to listOf("*.jar"))))
+    implementation("com.android.tools.build:apksig:8.7.3")
 }
