@@ -14,7 +14,7 @@ import java.util.zip.ZipFile
 object ApkStaticAnalyzer {
     fun analyze(context: Context, uri: Uri): String {
         val apk = File.createTempFile("selected-apk-", ".apk", context.cacheDir)
-        try {
+        return try {
             context.contentResolver.openInputStream(uri).use { input ->
                 val source = requireNotNull(input) { "Unable to open the selected APK." }
                 apk.outputStream().use { output -> source.copyTo(output) }
