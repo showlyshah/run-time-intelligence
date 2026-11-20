@@ -18,6 +18,7 @@ import java.security.PrivateKey
 import java.security.cert.X509Certificate
 import java.util.Date
 import java.util.Locale
+import java.util.zip.ZipFile
 import javax.security.auth.x500.X500Principal
 
 data class UrlFinding(
@@ -36,6 +37,8 @@ data class ApkStudioResult(
     val versionName: String,
     val minSdk: Int,
     val targetSdk: Int,
+    val versionCode: Int,
+    val nativeAbis: Set<String>,
     val findings: List<UrlFinding>
 )
 
@@ -76,6 +79,8 @@ class ApkModificationStudio(private val context: Context) {
         val version = packageInfo.versionName ?: "unknown"
         val minSdk = appInfo.minSdkVersion
         val targetSdk = appInfo.targetSdkVersion
+        val versionCode = packageInfo.versionCode
+        val nativeAbis = readNativeAbis(original)
 
         progress(12, "Initialising Android-safe Apktool engine")
         val config = ApktoolAndroid.configure(context).apply { isForced = true }
@@ -89,7 +94,7 @@ class ApkModificationStudio(private val context: Context) {
         progress(62, "Scanning decoded resources and code for URL references")
         val findings = scan(decoded)
         progress(78, "URL review list prepared")
-        return ApkStudioResult(original, decoded, packageName, version, minSdk, targetSdk, findings)
+        return ApkStudioResult(original, decoded, packageName, version, minSdk, targetSdk, versionCode, nativeAbis, findings)
     }
 
     fun rebuildAndSign(
@@ -135,7 +140,7 @@ class ApkModificationStudio(private val context: Context) {
         return context.packageManager.getPackageArchiveInfo(apk.absolutePath, 0)
     }
 
-    private fun scan(decoded: File): List<UrlFinding> {
+    private fun readNativeAbis(apk: File): Set<String> = ZipFile(apk).use { zip ->\n        val entries = zip.entries()\n        buildSet {\n            while (entries.hasMoreElements()) {\n                val name = entries.nextElement().name\n                if (name.startsWith("lib/")) name.split("/").getOrNull(1)?.let { add(it) }\n            }\n        }\n    }\n\n    private fun scan(decoded: File): List<UrlFinding> {
         val findings = mutableListOf<UrlFinding>()
         val urlRegex = Regex("https?://[^\\s\\\"'<>]+", RegexOption.IGNORE_CASE)
         val editableExtensions = setOf("xml", "json", "txt", "properties", "html", "htm", "css", "js", "yaml", "yml")
