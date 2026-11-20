@@ -56,11 +56,35 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+          cache-read-only: false
 
       - name: Run tests and build debug APK
         if: github.event_name != 'schedule' || steps.bugs.outputs.count >= 10
         working-directory: runtime-intelligence
-        run: gradle :app:testDebugUnitTest :app:assembleDebug
+        env:
+          JAVA_TOOL_OPTIONS: "-Xmx1g -XX:MaxMetaspaceSize=512m"
+        run: gradle :app:testDebugUnitTest :app:assembleDebug --build-cache --max-workers=1
+
+      - name: Verify DEX contains no device-statistics code
+        if: (github.event_name != 'schedule' || steps.bugs.outputs.count >= 10) && success()
+        working-directory: runtime-intelligence
+        run: |
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          from pathlib import Path
+          apk = Path("app/build/outputs/apk/debug/app-debug.apk")
+          with ZipFile(apk) as archive:
+              dex_files = [n for n in archive.namelist() if n == "classes.dex" or (n.startswith("classes") and n.endswith(".dex"))]
+              if not dex_files:
+                  raise SystemExit("No DEX files found in APK")
+              for name in dex_files:
+                  data = archive.read(name)
+                  forbidden = [b"ActivityManager", b"getMemoryInfo", b"Device memory dashboard", b"Refresh memory statistics"]
+                  found = [item.decode() for item in forbidden if item in data]
+                  if found:
+                      raise SystemExit(f"Removed device-statistics code still referenced in {name}: {found}")
+          print(f"Verified {len(dex_files)} DEX file(s): device-statistics code not present.")
+          PY
 
       - name: Upload debug APK artifact
         if: (github.event_name != 'schedule' || steps.bugs.outputs.count >= 10) && success()
