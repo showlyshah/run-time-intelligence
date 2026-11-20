@@ -18,6 +18,8 @@ import android.os.UserManager
 import android.provider.Settings
 import android.net.Uri
 import android.widget.Button
+import android.widget.CheckBox
+import android.graphics.Color
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
@@ -62,7 +64,7 @@ class MainActivity : Activity() {
             startActivityForResult(picker, APK_PICK_REQUEST)
         })
         content.addView(sectionTitle("APK Modification Studio"))
-        content.addView(infoText("For APKs you own or are authorised to modify. Decode resources and Smali, review URL references, remove selected literal URLs from editable text/resources, rebuild, sign and verify. Code-only, encrypted, dynamically generated and native references are reported but not automatically rewritten."))
+        content.addView(infoText("For APKs you own or are authorised to modify. Decode resources and DEX-derived Smali, check host reputation lists online, review each URL and permission individually, run a deeper advertising SDK / Advertising ID scan, then rebuild and sign only your selected changes."))
         content.addView(actionButton("Import APK • decompile and scan URLs") { openApkStudioPicker() })
         studioProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100; progress = 0 }
         studioProgressText = TextView(this).apply { text = "Studio idle • no APK loaded"; textSize = 13f; setPadding(0, 4, 0, 12) }
@@ -230,56 +232,101 @@ class MainActivity : Activity() {
     }
 
     private fun showUrlReview(result: ApkStudioResult, studio: ApkModificationStudio) {
-        val editableGroups = result.findings.filter { it.editable }.groupBy { it.host }.toSortedMap()
-        val codeOnlyCount = result.findings.count { !it.editable }
-        val hosts = editableGroups.keys.toList()
-        val summary = StringBuilder()
-        summary.append("Package: ${result.packageName}\nVersion: ${result.versionName}\n")
-        summary.append("Android API range: min ${result.minSdk} • target ${result.targetSdk}\n")
-        summary.append("URL references found: ${result.findings.size}\n")
-        summary.append("Editable resource/text references: ${result.findings.count { it.editable }}\n")
-        summary.append("Code-only references not auto-modified: $codeOnlyCount\n\n")
-        result.findings.take(100).forEach { finding ->
-            summary.append("${finding.host} • ${finding.category}\n")
-            summary.append("  ${finding.file}:${finding.line}${if (finding.editable) "" else " • review only"}\n")
+        val selectedUrls = linkedSetOf<String>()
+        val selectedPermissions = linkedSetOf<String>()
+        val scroll = ScrollView(this)
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(28, 12, 28, 12)
         }
-        report.text = summary.toString()
-        updateStudioProgress(78, "URL scan complete • review the findings")
-
-        if (hosts.isEmpty()) {
-            AlertDialog.Builder(this)
-                .setTitle("APK URL scan complete")
-                .setMessage("No editable text/resource URL references were found. Code-only references: $codeOnlyCount. The APK can still be rebuilt and signed without URL changes.")
-                .setNegativeButton("Close", null)
-                .setPositiveButton("Rebuild & sign") { _, _ -> rebuildStudioApk(studio, result, emptySet()) }
-                .show()
-            return
-        }
-
-        val labels = hosts.map { host ->
-            val sample = editableGroups[host].orEmpty().first()
-            val count = editableGroups[host].orEmpty().size
-            "$host • ${sample.category} • $count reference(s)"
-        }.toTypedArray()
-        val checked = BooleanArray(hosts.size)
-        AlertDialog.Builder(this)
-            .setTitle("Select URL hosts to remove")
-            .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
-            .setMessage("Only literal URL strings in decoded text/resource files are automatically cleared. Smali/code, encrypted, dynamic and native references remain untouched. Heuristic labels are not a malware verdict.")
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Rebuild unchanged") { _, _ -> rebuildStudioApk(studio, result, emptySet()) }
-            .setPositiveButton("Remove selected • rebuild & sign") { _, _ ->
-                val selected = hosts.indices.filter { checked[it] }.map { hosts[it] }.toSet()
-                rebuildStudioApk(studio, result, selected)
+        panel.addView(infoText("Package: ${result.packageName} • ${result.versionName}\nAndroid API: min ${result.minSdk} / target ${result.targetSdk}\nHost-list status: ${result.hostListStatus}\nURL references: ${result.findings.size}"))
+        panel.addView(sectionTitle("URL review • select each URL to remove"))
+        panel.addView(infoText("RED = exact match in downloaded ad/tracking lists. ORANGE = possible match based on hostname patterns. GREEN = no match found; it may still be a legitimate endpoint. Only checked, editable literal URLs are changed."))
+        val urlChecks = mutableListOf<Pair<UrlFinding, CheckBox>>()
+        result.findings.forEach { finding ->
+            val color = when (finding.confidence) {
+                "CONFIRMED" -> Color.rgb(190, 25, 35)
+                "POSSIBLE" -> Color.rgb(210, 112, 0)
+                else -> Color.rgb(35, 135, 65)
             }
-            .show()
+            val label = "${finding.url}\n${finding.file}:${finding.line} • ${finding.category}" +
+                if (finding.editable) "" else "\nDEX/Smali reference • review only (not directly editable)"
+            val check = CheckBox(this).apply {
+                text = label
+                textSize = 13f
+                setTextColor(color)
+                isEnabled = finding.editable
+                setPadding(0, 4, 0, 4)
+                setOnCheckedChangeListener { _, checked ->
+                    if (checked) selectedUrls.add(finding.url) else selectedUrls.remove(finding.url)
+                }
+            }
+            panel.addView(check)
+            urlChecks.add(finding to check)
+        }
+        panel.addView(sectionTitle("Manifest permission review"))
+        panel.addView(infoText("Every permission starts unchecked. Select only permissions you want removed. Removing a permission can disable app features or cause runtime failures. The AD_ID permission is the Android advertising-ID opt-out signal on supported integrations; DEX SDK references are reviewed separately below."))
+        val permissionChecks = mutableListOf<Pair<PermissionFinding, CheckBox>>()
+        result.permissions.forEach { permission ->
+            val check = CheckBox(this).apply {
+                text = permission.name + if (permission.isAdvertisingId) " • Advertising ID permission" else ""
+                textSize = 13f
+                setPadding(0, 4, 0, 4)
+                setOnCheckedChangeListener { _, checked ->
+                    if (checked) selectedPermissions.add(permission.name) else selectedPermissions.remove(permission.name)
+                }
+            }
+            panel.addView(check)
+            permissionChecks.add(permission to check)
+        }
+        if (result.permissions.isEmpty()) panel.addView(infoText("No requested permissions were found in the decoded manifest."))
+
+        panel.addView(actionButton("Run Deep Scan • DEX / Smali advertising indicators") {
+            updateStudioProgress(79, "Running deeper DEX / Smali scan")
+            Thread {
+                try {
+                    val deep = studio.deepScan(result) { percent, message -> updateStudioProgress(percent, message) }
+                    runOnUiThread {
+                        val details = if (deep.isEmpty()) "No known advertising SDK or Advertising ID indicators were found."
+                        else deep.take(120).joinToString("\n\n") {
+                            "${it.category}\n${it.indicator}\n${it.file}:${it.line}\n${it.detail}"
+                        }
+                        AlertDialog.Builder(this)
+                            .setTitle("Deep Scan • ${deep.size} code indicators")
+                            .setMessage(details + "\n\nDeep scan is evidence for manual review. DEX bytecode is not blindly rewritten because changing arbitrary instructions can corrupt the app. Select the AD_ID manifest permission above when the app's integration supports that opt-out.")
+                            .setPositiveButton("Back to selections", null)
+                            .show()
+                    }
+                } catch (error: Exception) {
+                    updateStudioProgress(78, "Deep scan failed: ${error.message ?: error.javaClass.simpleName}")
+                }
+            }.start()
+        })
+        scroll.addView(panel)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Review detected URLs and permissions")
+            .setView(scroll)
+            .setNegativeButton("Cancel", null)
+            .setNeutralButton("Rebuild unchanged") { _, _ ->
+                rebuildStudioApk(studio, result, emptySet(), emptySet())
+            }
+            .setPositiveButton("Apply selected changes") { _, _ ->
+                rebuildStudioApk(studio, result, selectedUrls.toSet(), selectedPermissions.toSet())
+            }
+            .create()
+        dialog.show()
     }
 
-    private fun rebuildStudioApk(studio: ApkModificationStudio, result: ApkStudioResult, hosts: Set<String>) {
-        updateStudioProgress(80, "Preparing APK rebuild")
+    private fun rebuildStudioApk(
+        studio: ApkModificationStudio,
+        result: ApkStudioResult,
+        selectedUrls: Set<String>,
+        selectedPermissions: Set<String>
+    ) {
+        updateStudioProgress(80, "Preparing selected APK changes")
         Thread {
             try {
-                val output = studio.rebuildAndSign(result, hosts) { percent, message ->
+                val output = studio.rebuildAndSign(result, selectedUrls, selectedPermissions) { percent, message ->
                     updateStudioProgress(percent, message)
                 }
                 pendingSignedApk = output
