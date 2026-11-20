@@ -7,7 +7,7 @@ on:
       - ".github/workflows/mymoney-apk.yml"
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -36,3 +36,18 @@ jobs:
           path: expense-tracker/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Read app version
+        id: version
+        working-directory: expense-tracker
+        run: |
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Publish versioned GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: LoganTech Expenses Tracker v${{ steps.version.outputs.version }}
+          body: "Install the attached LoganTech Expenses Tracker APK. This temporary test build uses a debug signing key."
+          files: expense-tracker/app/build/outputs/apk/debug/app-debug.apk
+          make_latest: true
