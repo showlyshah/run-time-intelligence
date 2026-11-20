@@ -35,9 +35,11 @@ class MainActivity : Activity() {
     private lateinit var studioProgressText: TextView
     private var pendingStudioResult: ApkStudioResult? = null
     private var pendingSignedApk: java.io.File? = null
+    private var backgroundWorkActive = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestNotificationPermissionIfNeeded()
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -107,6 +109,29 @@ class MainActivity : Activity() {
 
         setContentView(ScrollView(this).apply { addView(content) })
         refreshDiagnostics()
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST)
+        }
+    }
+
+    private fun beginBackgroundWork(message: String) {
+        backgroundWorkActive = true
+        try {
+            BackgroundWorkService.start(this, message)
+        } catch (error: Exception) {
+            status.text = "Background notification could not start: ${error.message ?: error.javaClass.simpleName}"
+        }
+    }
+
+    private fun finishBackgroundWork() {
+        if (!backgroundWorkActive) return
+        backgroundWorkActive = false
+        try { BackgroundWorkService.stop(this) } catch (_: Exception) { }
     }
 
     private fun infoText(value: String) = TextView(this).apply {
@@ -213,11 +238,15 @@ class MainActivity : Activity() {
             studioProgress.progress = percent.coerceIn(0, 100)
             studioProgressText.text = "$percent% • $message"
             status.text = message
+            if (backgroundWorkActive) {
+                try { BackgroundWorkService.update(this, message) } catch (_: Exception) { }
+            }
         }
     }
 
     private fun runApkStudioInspection(uri: Uri) {
         val studio = ApkModificationStudio(this)
+        beginBackgroundWork("Decoding APK and inspecting resources")
         updateStudioProgress(1, "Opening selected APK")
         Thread {
             try {
@@ -228,6 +257,8 @@ class MainActivity : Activity() {
                 runOnUiThread { showUrlReview(result, studio) }
             } catch (error: Exception) {
                 updateStudioProgress(0, "Failed: ${error.message ?: error.javaClass.simpleName}")
+            } finally {
+                finishBackgroundWork()
             }
         }.start()
     }
@@ -286,7 +317,8 @@ class MainActivity : Activity() {
             showSmaliPatcher(studio, result)
         })
         panel.addView(actionButton("Run Deep Scan • DEX / Smali advertising indicators") {
-            updateStudioProgress(79, "Running deeper DEX / Smali scan")
+            beginBackgroundWork("Running fast DEX / Smali scan")
+            updateStudioProgress(79, "Running fast DEX / Smali scan")
             Thread {
                 try {
                     val deep = studio.deepScan(result) { percent, message -> updateStudioProgress(percent, message) }
@@ -303,6 +335,8 @@ class MainActivity : Activity() {
                     }
                 } catch (error: Exception) {
                     updateStudioProgress(78, "Deep scan failed: ${error.message ?: error.javaClass.simpleName}")
+                } finally {
+                    finishBackgroundWork()
                 }
             }.start()
         })
@@ -322,6 +356,7 @@ class MainActivity : Activity() {
     }
 
     private fun showSmaliPatcher(studio: ApkModificationStudio, result: ApkStudioResult) {
+        beginBackgroundWork("Indexing Smali files")
         updateStudioProgress(5, "Loading Smali file index")
         Thread {
             try {
@@ -338,6 +373,7 @@ class MainActivity : Activity() {
                     }
                 }
             } catch (error: Exception) { updateStudioProgress(0, "Smali index failed: ${error.message ?: error.javaClass.simpleName}") }
+            finally { finishBackgroundWork() }
         }.start()
     }
 
@@ -407,6 +443,7 @@ class MainActivity : Activity() {
         selectedUrls: Set<String>,
         selectedPermissions: Set<String>
     ) {
+        beginBackgroundWork("Rebuilding and signing modified APK")
         updateStudioProgress(80, "Preparing selected APK changes")
         Thread {
             try {
@@ -424,6 +461,8 @@ class MainActivity : Activity() {
                 }
             } catch (error: Exception) {
                 updateStudioProgress(0, "Build/sign failed: ${error.message ?: error.javaClass.simpleName}")
+            } finally {
+                finishBackgroundWork()
             }
         }.start()
     }
@@ -593,6 +632,7 @@ A Work Profile is not root access. Android still protects each app's private mem
 
     companion object {
         private const val MB = 1024.0 * 1024.0
+        private const val NOTIFICATION_PERMISSION_REQUEST = 4106
         private const val APK_PICK_REQUEST = 4102
         private const val EXPORT_REQUEST = 4103
         private const val APK_STUDIO_PICK_REQUEST = 4104
