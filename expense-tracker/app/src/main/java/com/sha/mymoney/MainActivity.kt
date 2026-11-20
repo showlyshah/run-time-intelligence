@@ -1,6 +1,9 @@
 package com.sha.mymoney
 
 import android.app.*
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.os.Environment
 import android.content.Intent
 import android.graphics.pdf.PdfDocument
 import android.os.Bundle
@@ -12,6 +15,10 @@ import android.database.sqlite.SQLiteOpenHelper
 import java.text.SimpleDateFormat
 import java.util.*
 import java.io.ByteArrayOutputStream
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 private const val BG = 0xFF101827.toInt()
 private const val PANEL = 0xFF1D2A3D.toInt()
@@ -68,7 +75,8 @@ class MainActivity:Activity(){
  private fun panel():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(8),dp(10),dp(8));background=rounded(PANEL,18f,0xFF34465F.toInt())}
  private fun money(v:Double)="₹"+String.format(Locale("en","IN"),"%.2f",v)
  private fun dateNow()=SimpleDateFormat("yyyy-MM-dd",Locale.US).format(Date())
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);store=Store(this);window.statusBarColor=BG;window.navigationBarColor=BG;show()}
+ override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);store=Store(this);scheduleMonthlyBackup();window.statusBarColor=BG;window.navigationBarColor=BG;show()}
+ private fun scheduleMonthlyBackup(){val request=PeriodicWorkRequestBuilder<MonthlyBackupWorker>(30,TimeUnit.DAYS).build();WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork("mymoney_monthly_backup",ExistingPeriodicWorkPolicy.KEEP,request)}
  private fun show(){root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(BG);setPadding(dp(12),dp(10),dp(12),dp(4))}
   val head=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL};head.addView(text("💠 MyMoney",26f,GOLD),LinearLayout.LayoutParams(0,-2,1f));head.addView(text("SMART FINANCE",10f,MUTED));root.addView(head)
   val body=ScrollView(this);val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};body.addView(content);root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
@@ -76,7 +84,7 @@ class MainActivity:Activity(){
   val nav=LinearLayout(this).apply{background=rounded(PANEL,20f);gravity=Gravity.CENTER};listOf("📒\\nRecords","📊\\nAnalysis","🎯\\nBudgets","🏦\\nAccounts","🎨\\nCategories").forEachIndexed{i,n->val b=TextView(this).apply{text=n;textSize=10f;gravity=Gravity.CENTER;setTextColor(if(tab==i)GOLD else MUTED);setTypeface(null,if(tab==i)Typeface.BOLD else Typeface.NORMAL);setPadding(dp(2),dp(9),dp(2),dp(9));setOnClickListener{tab=i;chosenCategory=null;show()}};nav.addView(b,LinearLayout.LayoutParams(0,-2,1f))};root.addView(nav);setContentView(root)
  }
  private fun totals(list:List<Tx>,kind:String)=list.filter{it.kind==kind}.sumOf{it.amount}
- private fun records(c:LinearLayout){val data=store.all();val card=panel();card.addView(text("TOTAL BALANCE",12f,MUTED));val opening=store.accounts().sumOf{it.opening};card.addView(text(money(opening+totals(data,"Income")-totals(data,"Expense")),30f,GOLD));val row=LinearLayout(this);row.addView(text("Income  "+money(totals(data,"Income")),14f,0xFF72D6A8.toInt()),LinearLayout.LayoutParams(0,-2,1f));row.addView(text("Expense  "+money(totals(data,"Expense")),14f,0xFFE58B7D.toInt()));card.addView(row);c.addView(card);c.addView(button("+ Add transaction"){editTransaction(null)});c.addView(button("📤  Export & backup"){exportDialog()})
+ private fun records(c:LinearLayout){val data=store.all();val card=panel();card.addView(text("TOTAL BALANCE",12f,MUTED));val opening=store.accounts().sumOf{it.opening};card.addView(text(money(opening+totals(data,"Income")-totals(data,"Expense")),30f,GOLD));val row=LinearLayout(this);row.addView(text("Income  "+money(totals(data,"Income")),14f,0xFF72D6A8.toInt()),LinearLayout.LayoutParams(0,-2,1f));row.addView(text("Expense  "+money(totals(data,"Expense")),14f,0xFFE58B7D.toInt()));card.addView(row);c.addView(card);c.addView(button("+ Add transaction"){editTransaction(null)});c.addView(button("📤  Export & backup"){exportDialog()});c.addView(text("🔄 Automatic local backup runs about every 30 days.",11f,MUTED))
   c.addView(text("Recent transactions",19f,GOLD));if(data.isEmpty())c.addView(text("No entries yet. Add your first income or expense."));data.forEach{t->val p=panel();p.addView(text(categoryIcon(t.category)+"  "+t.title+"  •  "+t.category,16f,COLORS[(store.categories().indexOf(t.category).coerceAtLeast(0))%COLORS.size]));p.addView(text(t.date+"  •  "+t.account+"     "+(if(t.kind=="Income")"+" else "−")+money(t.amount),14f,if(t.kind=="Income")0xFF72D6A8.toInt() else 0xFFE58B7D.toInt()));p.setOnClickListener{editTransaction(t)};p.setOnLongClickListener{AlertDialog.Builder(this).setMessage("Delete this transaction?").setPositiveButton("Delete"){_,_->store.remove(t.id);show()}.setNegativeButton("Cancel",null).show();true};c.addView(p)}}
  private fun editTransaction(old:Tx?){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(20),dp(8),dp(20),0)}
   val title=EditText(this).apply{hint="Description";setText(old?.title?:"")}
@@ -158,4 +166,40 @@ class PieView(ctx:android.content.Context,private val values:Map<String,Double>,
  override fun onTouchEvent(event:android.view.MotionEvent):Boolean{if(event.action==android.view.MotionEvent.ACTION_UP){val cx=width/2f;val cy=height/2f;var angle=Math.toDegrees(kotlin.math.atan2((event.y-cy).toDouble(),(event.x-cx).toDouble())).toFloat()+90f;if(angle<0)angle+=360f;val total=values.values.sum();var acc=0f;values.entries.forEach{val sweep=(it.value/total*360).toFloat();if(angle>=acc&&angle<acc+sweep){onSelect(it.key);performClick();return true};acc+=sweep}};return true}
  override fun performClick():Boolean{super.performClick();return true}
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
+}
+
+
+
+class MonthlyBackupWorker(context:android.content.Context,params:androidx.work.WorkerParameters):androidx.work.Worker(context,params){
+ override fun doWork():androidx.work.ListenableWorker.Result{
+  return try{
+   val store=Store(applicationContext);val tx=store.all();val stamp=SimpleDateFormat("yyyy-MM-dd",Locale.US).format(Date())
+   val csv=StringBuilder("Date,Type,Category,Description,Amount,Account\n")
+   tx.forEach{t->val fields=listOf(t.date,t.kind,t.category,t.title,t.amount.toString(),t.account);csv.append(fields.joinToString(","){ "\""+it.replace("\"","\"\"")+"\"" }).append("\n")}
+   val income=tx.filter{it.kind=="Income"}.sumOf{it.amount};val expense=tx.filter{it.kind=="Expense"}.sumOf{it.amount};val opening=store.accounts().sumOf{it.opening}
+   val summary=buildString{
+    append("MYMONEY MONTHLY BACKUP\nGenerated: ").append(stamp).append("\n")
+    append("Total balance: ₹").append(String.format(Locale.US,"%.2f",opening+income-expense)).append("\n")
+    append("Total income: ₹").append(String.format(Locale.US,"%.2f",income)).append("\n")
+    append("Total expenses: ₹").append(String.format(Locale.US,"%.2f",expense)).append("\n")
+    append("Transactions: ").append(tx.size).append("\n\nCATEGORY SPENDING\n")
+    tx.filter{it.kind=="Expense"}.groupBy{it.category}.mapValues{e->e.value.sumOf{it.amount}}.toList().sortedByDescending{it.second}.forEach{append(it.first).append(": ₹").append(String.format(Locale.US,"%.2f",it.second)).append("\n")}
+    append("\nTRANSACTIONS\n");tx.forEach{append(it.date).append(" | ").append(it.kind).append(" | ").append(it.category).append(" | ").append(it.title).append(" | ₹").append(it.amount).append(" | ").append(it.account).append("\n")}
+   }
+   saveBackup("MyMoney-$stamp.csv","text/csv",csv.toString().toByteArray(Charsets.UTF_8))
+   saveBackup("MyMoney-$stamp-summary.txt","text/plain",summary.toByteArray(Charsets.UTF_8))
+   androidx.work.ListenableWorker.Result.success()
+  }catch(_:Exception){androidx.work.ListenableWorker.Result.retry()}
+ }
+ private fun saveBackup(name:String,mime:String,bytes:ByteArray){
+  if(android.os.Build.VERSION.SDK_INT>=29){
+   val values=ContentValues().apply{put(MediaStore.MediaColumns.DISPLAY_NAME,name);put(MediaStore.MediaColumns.MIME_TYPE,mime);put(MediaStore.MediaColumns.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/MyMoneyBackups")}
+   val uri=applicationContext.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values)?:throw java.io.IOException("Could not create backup file")
+   applicationContext.contentResolver.openOutputStream(uri)?.use{it.write(bytes)}?:throw java.io.IOException("Could not write backup file")
+  }else{
+   val dir=java.io.File(applicationContext.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS),"MyMoneyBackups")
+   if(!dir.exists()&&!dir.mkdirs())throw java.io.IOException("Could not create backup folder")
+   java.io.File(dir,name).writeBytes(bytes)
+  }
+ }
 }
