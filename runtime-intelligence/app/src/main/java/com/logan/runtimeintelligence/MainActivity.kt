@@ -71,7 +71,7 @@ class MainActivity : Activity() {
         endpoint = EditText(this).apply {
             hint = "Optional HTTPS cloud endpoint"
             textSize = 14f
-            singleLine = true
+            setSingleLine(true)
         }
         val upload = Button(this).apply {
             text = "UPLOAD LATEST REPORT"
