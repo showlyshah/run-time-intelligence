@@ -1,4 +1,4 @@
-# MyMoney — Android expense tracker
+# LoganTech Expenses Tracker — Android expense tracker
 
 Standalone Android application project. Minimum Android version: 8.0 (API 26). Debug APK is built by the GitHub Actions workflow at `.github/workflows/mymoney-apk.yml`.
 
