@@ -269,7 +269,7 @@ class ApkModificationStudio(private val context: Context) {
                     urlRegex.findAll(line).forEach inner@{ match ->
                         val raw = match.value.trimEnd('.', ',', ')', ']', '}')
                         val host = runCatching { java.net.URI(raw).host?.lowercase(Locale.ROOT) }.getOrNull() ?: return@inner
-                        val matches = blockedHosts.filter { host == it || host.endsWith(".$it") }.take(3)
+                        val matches = matchingBlockedHosts(host, blockedHosts)
                         val confidence = when {
                             matches.isNotEmpty() -> "CONFIRMED"
                             isAdHeuristic(host) -> "POSSIBLE"
@@ -288,6 +288,16 @@ class ApkModificationStudio(private val context: Context) {
             }
         }
         return findings.distinctBy { "${it.file}:${it.line}:${it.url}" }.take(1500)
+    }
+
+    private fun matchingBlockedHosts(host: String, blockedHosts: Set<String>): List<String> {
+        val matches = mutableListOf<String>()
+        var candidate = host
+        while (candidate.contains('.')) {
+            if (candidate in blockedHosts) matches.add(candidate)
+            candidate = candidate.substringAfter('.')
+        }
+        return matches.take(3)
     }
 
     private fun isAdHeuristic(host: String): Boolean {
