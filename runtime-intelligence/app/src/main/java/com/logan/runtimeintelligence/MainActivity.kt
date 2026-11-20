@@ -12,7 +12,6 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.os.Debug
-import android.os.PowerManager
 import android.os.Process
 import android.os.UserManager
 import android.provider.Settings
@@ -70,12 +69,6 @@ class MainActivity : Activity() {
         content.addView(infoText("Grant only the access you need. Android requires you to approve special access in Settings. Device Owner and Work Profile ownership require managed-device provisioning; this app cannot grant itself administrator status."))
         content.addView(actionButton("Open Usage Access settings") {
             openSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-        })
-        content.addView(actionButton("Open Notification Access settings") {
-            openSettings(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-        })
-        content.addView(actionButton("Open Battery Optimisation settings") {
-            openSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         })
         content.addView(actionButton("Open this app's system settings") {
             openSettings(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
@@ -178,9 +171,6 @@ class MainActivity : Activity() {
 
         output.append("AVAILABLE PRIVILEGES / MANAGEMENT STATE\n")
         output.append("Usage Access: ${if (hasUsageAccess()) "GRANTED" else "not granted"}\n")
-        output.append("Notification Listener: ${if (hasNotificationAccess()) "enabled" else "not enabled"}\n")
-        val power = getSystemService(POWER_SERVICE) as PowerManager
-        output.append("Battery optimisation exemption: ${if (power.isIgnoringBatteryOptimizations(packageName)) "exempt" else "standard"}\n")
         val dpm = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
         output.append("Device Owner: ${if (dpm.isDeviceOwnerApp(packageName)) "YES" else "no"}\n")
         output.append("Profile Owner: ${if (dpm.isProfileOwnerApp(packageName)) "YES" else "no"}\n")
@@ -212,11 +202,6 @@ class MainActivity : Activity() {
             packageName
         )
         return mode == AppOpsManager.MODE_ALLOWED
-    }
-
-    private fun hasNotificationAccess(): Boolean {
-        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
-        return enabled.split(':').any { it.contains(packageName) }
     }
 
     private fun readNetworkState(): String {
