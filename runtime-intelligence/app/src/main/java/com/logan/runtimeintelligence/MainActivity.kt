@@ -20,6 +20,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import org.json.JSONObject
 import java.util.Locale
 
 class MainActivity : Activity() {
@@ -70,6 +71,7 @@ class MainActivity : Activity() {
         content.addView(actionButton("Open Usage Access settings") {
             openSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         })
+        content.addView(actionButton("Work Profile setup guide") { showWorkProfileGuide() })
         content.addView(actionButton("Open this app's system settings") {
             openSettings(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
         })
@@ -83,6 +85,7 @@ class MainActivity : Activity() {
             setTextIsSelectable(true)
             setPadding(0, 16, 0, 24)
         }
+        content.addView(actionButton("Export current report (JSON)") { exportReport() })
         content.addView(report)
 
         setContentView(ScrollView(this).apply { addView(content) })
@@ -117,6 +120,22 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Android API; retained for API 26 compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == EXPORT_REQUEST && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                contentResolver.openOutputStream(uri)?.use { stream ->
+                    stream.write(JSONObject()
+                        .put("app", "Runtime Intelligence")
+                        .put("exportedAtEpochMs", System.currentTimeMillis())
+                        .put("report", report.text.toString())
+                        .toString(2).toByteArray(Charsets.UTF_8))
+                } ?: error("Unable to open destination")
+                status.text = "Report exported to the selected location"
+            } catch (error: Exception) {
+                status.text = "Export failed: ${error.message ?: error.javaClass.simpleName}"
+            }
+            return
+        }
         if (requestCode == APK_PICK_REQUEST && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             status.text = "Analysing selected APK locally…"
@@ -137,6 +156,31 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::report.isInitialized) refreshDiagnostics()
+    }
+
+    private fun exportReport() {
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/json"
+            putExtra(Intent.EXTRA_TITLE, "runtime-intelligence-report.json")
+        }
+        startActivityForResult(intent, EXPORT_REQUEST)
+    }
+
+    private fun showWorkProfileGuide() {
+        report.text = """WORK PROFILE SETUP GUIDE
+
+1. Back up important personal data first.
+2. If your organisation provides Android Enterprise enrollment, follow its official QR-code, enrollment-token or invitation flow.
+3. On a personally managed device, check Android Settings > Passwords & accounts (or Accounts) > Add work account, if your device and account support it.
+4. Complete the prompts from your organisation's management provider. Android creates the Work Profile and its policy controller becomes Profile Owner.
+5. Install Runtime Intelligence separately inside the Work Profile from an approved source.
+6. Open this app inside that profile and refresh diagnostics. Inventory is scoped to the current Android user/profile.
+
+This app cannot create or appoint itself Profile Owner. Menu names and availability vary by device and organisation. Removing a Work Profile may delete managed apps and data; follow your administrator's instructions.
+
+A Work Profile is not root access. Android still protects each app's private memory, files and credentials from other apps."""
+        status.text = "Work Profile guidance displayed"
     }
 
     private fun refreshDiagnostics() {
@@ -280,5 +324,6 @@ class MainActivity : Activity() {
     companion object {
         private const val MB = 1024.0 * 1024.0
         private const val APK_PICK_REQUEST = 4102
+        private const val EXPORT_REQUEST = 4103
     }
 }
