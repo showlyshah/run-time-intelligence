@@ -13,7 +13,10 @@ The Option A foundation is designed for a normal installable Android app and use
 - **Device privilege audit:** reports Usage Access, Device Owner, Profile Owner, managed Work Profile state and battery-optimisation state. It explains that Device Owner/Profile Owner status requires managed-device provisioning and cannot be self-granted by an ordinary app.
 - **Device and process memory dashboard:** reports device RAM and this app's own Java/native heap and PSS.
 - **Network diagnostics:** reports active transport, interface and DNS server addresses; last-24-hour per-UID aggregate upload/download byte counters for launcher-visible apps when Usage Access is granted.
-- **Settings shortcuts:** provides direct routes to Usage Access and this app's Android App Info page.
+- **Settings shortcuts and Work Profile guide:** explains organisation-led Android Enterprise enrollment and profile-scoped installation; does not self-provision administrator privileges.
+- **Local report export:** exports the currently displayed diagnostic report as JSON through Android's document picker. The user chooses the destination, including local storage or a connected cloud document provider.
+- **Authorised Debug SDK:** a separate Android library exposes numeric metric logging and own-process memory snapshots. It deliberately has no credential, header, URL or payload collection API and is included in the main app only for debug builds.
+- **Sample app:** a separate installable app demonstrates the SDK with synthetic operation counters and its own process memory metrics.
 - **Local-first operation:** APK and package metadata analysis runs on-device. No automatic upload of reports or secrets.
 
 ### Permissions and special access
@@ -31,7 +34,7 @@ This APK is a diagnostics controller, not a virtual Android machine. Android alr
 
 The app currently shows Android's aggregate per-app byte counters and the device's own active-network/DNS configuration. It does not yet capture per-app remote IP connections or packet payloads. A future VPN mode must be implemented as a complete, tested packet-forwarding tunnel with a visible foreground notification and Android's VPN consent flow. A packet reader that does not forward traffic is intentionally not included because it would break connectivity.
 
-HTTPS content and session keys remain inaccessible for unrelated apps. For apps we own or are authorised to test, a debug SDK can record sanitised request/response details at the app's own networking layer, before encryption and after decryption. Test keys should be synthetic and restricted to debug builds.
+HTTPS content and session keys remain inaccessible for unrelated apps. For apps we own or are authorised to test, the included SDK currently records numeric metrics and memory snapshots inside that app's own process. It does not inspect network payloads or credentials.
 
 ## Compatibility
 
@@ -45,7 +48,7 @@ HTTPS content and session keys remain inaccessible for unrelated apps. For apps 
 From the `runtime-intelligence` directory:
 
 ```bash
-gradle :app:testDebugUnitTest :app:assembleDebug
+gradle testDebugUnitTest assembleDebug
 ```
 
 Debug APK output:
@@ -55,10 +58,10 @@ Debug APK output:
 ## Roadmap
 
 1. Build and test this branch on API 26, 28, 29, 30, 31, 33, 34, 35, and current Android emulator images.
-2. Add a dedicated managed-profile provisioning guide and profile-aware inventory checks; do not attempt to self-assign enterprise ownership.
+2. Validate Work Profile provisioning and profile-scoped inventory on supported OEM devices.
 3. Implement a complete opt-in VPN tunnel only after packet forwarding, IPv4/IPv6, DNS, reconnect, battery and leak tests pass. Show IP/port/protocol/byte/time metadata; do not decrypt third-party HTTPS.
-4. Add an authorised sample app and debug SDK with synthetic test credentials, structured network logs, memory profiling and heap/leak diagnostics for that app's own process.
-5. Add local report export and optional AI analysis of redacted APK findings and metadata. External upload must be explicit and secret-redacted.
+4. Extend the authorised SDK with opt-in, redacted app-owned network instrumentation and leak tests.
+5. Add optional AI analysis of redacted APK findings and metadata. External upload must be explicit and secret-redacted.
 
 ## Security and privacy
 
