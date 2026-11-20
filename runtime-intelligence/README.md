@@ -1,75 +1,73 @@
 # Runtime Intelligence
 
-Android application for transparent, user-authorised runtime and network diagnostics.
+Android 8+ local diagnostics and authorised app-security research companion.
 
-## App sandbox lab — initial implementation
+## Sandbox & Debug Lab — current implementation
 
-The app now includes a user-selected APK static-inspection workflow. It reads the APK as a file and does not install or execute it. The initial report includes:
+The Option A foundation is designed for a normal installable Android app and uses user-approved Android access rather than attempting to bypass the OS sandbox.
 
-- Package name and version, requested permissions, and exported component counts.
-- Bounded scanning of DEX/configuration strings for URL hostnames and IPv4-like strings.
-- Counts of possible embedded-secret patterns, with candidate values deliberately hidden.
-- Explicit limitations and false-positive warnings.
+### Implemented in this branch
 
-This is not an Android virtual machine or a second app runtime. A normal third-party Android app cannot transparently host arbitrary apps inside a separate Android OS sandbox or read their private runtime heap. True app virtualization requires a supported managed/work profile, a dedicated virtual-device environment, or a custom OS/virtualization framework; compatibility and isolation guarantees vary. The safe next step is to build an emulator-based lab and a companion test app that uses synthetic keys and opt-in debug instrumentation.
+- **APK static inspection:** import an APK using Android's document picker. The app does not install or execute it. It reports package/version, requested permissions, exported component counts, bounded DEX/config string indicators, URL hostnames, IPv4-like strings and redacted possible embedded-secret pattern counts.
+- **Installed-app inventory:** uses the declared `QUERY_ALL_PACKAGES` visibility to list user-installed packages visible to the current Android user/profile. It reports package/version, debuggable/test-only flags, dangerous permission declarations and grant state, plus exported component counts.
+- **Device privilege audit:** reports Usage Access, Device Owner, Profile Owner, managed Work Profile state and battery-optimisation state. It explains that Device Owner/Profile Owner status requires managed-device provisioning and cannot be self-granted by an ordinary app.
+- **Device and process memory dashboard:** reports device RAM and this app's own Java/native heap and PSS.
+- **Network diagnostics:** reports active transport, interface and DNS server addresses; last-24-hour per-UID aggregate upload/download byte counters for launcher-visible apps when Usage Access is granted.
+- **Settings shortcuts:** provides direct routes to Usage Access and this app's Android App Info page.
+- **Local-first operation:** APK and package metadata analysis runs on-device. No automatic upload of reports or secrets.
 
-The APK scanner does not recover runtime keys, decrypt HTTPS, or prove that a discovered hostname/IP is contacted. Runtime IP metadata collection remains a separate, opt-in VPN feature requiring Android's VPN consent dialog. Plaintext request/response inspection is limited to test apps or builds instrumented by their owner.
+### Permissions and special access
 
-## Current diagnostics foundation
+- `QUERY_ALL_PACKAGES`: broad installed-package visibility. This is sensitive and Google Play restricts its use to qualifying core use cases. Sideloading avoids Play review but does not remove Android's privacy boundaries.
+- `PACKAGE_USAGE_STATS`: special Usage Access granted by the user in Android Settings. It is used for aggregate network counters.
+- `ACCESS_NETWORK_STATE`: reads the current network transport and link metadata.
+- No root, Accessibility Service, notification listener, Device Admin receiver, VPN interception or cross-app memory access is enabled in this build. Those capabilities are not silently enabled.
 
-- Device RAM dashboard using Android's public `ActivityManager.MemoryInfo` API.
-- This app's own process memory: Java heap, native heap allocation, and process PSS.
-- On-demand, last-24-hour aggregate network byte counts for launcher-visible apps using Android's `NetworkStatsManager`.
-- Per-app network statistics require the user to explicitly grant Usage Access in Android Settings.
-- Minimum Android version: API 26 (Android 8.0); target SDK: API 35.
+## Important distinction: sandbox vs managed profile
 
-## Important Android security boundaries
+This APK is a diagnostics controller, not a virtual Android machine. Android already isolates apps with per-app UIDs, SELinux and kernel controls. A real Work Profile is a separate Android user/profile created through Android Enterprise provisioning by the user or an authorised organisation. An app cannot create itself as Profile Owner or Device Owner after an ordinary installation. When a Work Profile is provisioned, the app must be installed separately inside that profile to inspect that profile's app inventory; it still cannot read other apps' private heaps or keys.
 
-This app does not read another app's private process memory, TLS session keys, passwords, tokens, or private message contents. Android's application sandbox prevents ordinary third-party apps from doing that.
+## Network visibility boundaries
 
-The current per-app network view reports aggregate upload/download bytes only. It does not identify each remote IP, inspect packet payloads, or decrypt HTTPS. Coverage and UID attribution vary by Android version, device vendor, carrier, and network type.
+The app currently shows Android's aggregate per-app byte counters and the device's own active-network/DNS configuration. It does not yet capture per-app remote IP connections or packet payloads. A future VPN mode must be implemented as a complete, tested packet-forwarding tunnel with a visible foreground notification and Android's VPN consent flow. A packet reader that does not forward traffic is intentionally not included because it would break connectivity.
 
-## Planned network intelligence milestones
+HTTPS content and session keys remain inaccessible for unrelated apps. For apps we own or are authorised to test, a debug SDK can record sanitised request/response details at the app's own networking layer, before encryption and after decryption. Test keys should be synthetic and restricted to debug builds.
 
-1. Add a user-started, persistent-notification VPN capture mode with explicit Android VPN consent. Packet forwarding must be implemented and tested so monitoring does not break device connectivity.
-2. Capture packet metadata such as IP endpoints, ports, protocol, packet sizes, timestamps, and DNS/TLS metadata where observable.
-3. Add an app-owned debug SDK/sample app that records sanitised request/response details before encryption and after decryption. Support test-only TLS session-key logging for controlled test builds.
-4. Add optional AI analysis for sanitised metadata and authorised debug payloads. Never upload raw captures or credentials by default; require explicit opt-in and redact secrets.
-5. Add local memory diagnostics and leak tracking for this app and explicitly instrumented test apps. Do not attempt cross-app private-memory inspection.
+## Compatibility
 
-## Build locally
+- Minimum SDK: API 26 (Android 8.0).
+- Compile / target SDK: API 35.
+- The minimum SDK allows installation on Android 8 and later, but each feature depends on APIs, vendor behaviour and user-granted settings. This branch has not yet been build-verified or device-tested.
+- Android 16/17 support should be verified on physical devices and matching emulator images; the app's minSdk does not by itself prove every feature works on every release.
 
-Open this directory in Android Studio with JDK 17 and Android SDK 35 installed, or run:
+## Build
+
+From the `runtime-intelligence` directory:
 
 ```bash
-gradle :app:assembleDebug
+gradle :app:testDebugUnitTest :app:assembleDebug
 ```
 
-The debug APK is generated at:
+Debug APK output:
 
 `app/build/outputs/apk/debug/app-debug.apk`
 
-## Weekly GitHub Actions build
+## Roadmap
 
-The workflow at the repository root, `.github/workflows/weekly-apk.yml`, runs every Monday at 03:17 UTC (08:47 India time). It counts open issues carrying the `bug` label. If there are 10 or more, it runs unit-test and debug-APK build tasks and stores the APK as a 30-day workflow artifact.
-
-A manual workflow dispatch and pushes affecting `runtime-intelligence/**` also run the build. This automation builds the code; it does not automatically diagnose or repair bugs. AI-assisted repair, test validation, and pull-request creation are separate work. Merges and releases should remain subject to maintainer approval.
+1. Build and test this branch on API 26, 28, 29, 30, 31, 33, 34, 35, and current Android emulator images.
+2. Add a dedicated managed-profile provisioning guide and profile-aware inventory checks; do not attempt to self-assign enterprise ownership.
+3. Implement a complete opt-in VPN tunnel only after packet forwarding, IPv4/IPv6, DNS, reconnect, battery and leak tests pass. Show IP/port/protocol/byte/time metadata; do not decrypt third-party HTTPS.
+4. Add an authorised sample app and debug SDK with synthetic test credentials, structured network logs, memory profiling and heap/leak diagnostics for that app's own process.
+5. Add local report export and optional AI analysis of redacted APK findings and metadata. External upload must be explicit and secret-redacted.
 
 ## Security and privacy
 
-- Network monitoring must be visible and user-controlled.
-- Store captures locally by default.
-- Require explicit opt-in before sending diagnostic data to an external AI service.
-- Redact authentication headers, cookies, tokens, personal identifiers, and message content.
-- Do not add credentials, API keys, or signing keys to source control.
+- Keep collection visible and user-controlled.
+- Store diagnostic reports locally by default.
+- Never collect passwords, tokens, cookies, private keys or private message contents from unrelated apps.
+- Do not commit API keys, signing keys or credentials.
+- Do not claim a vulnerability without reproducible evidence and an affected-version/patch assessment.
 
+## GitHub Actions
 
-## Sandbox analysis roadmap
-
-1. **Static APK inspection (implemented foundation):** user-selected APK, manifest permissions/components, DEX/configuration string indicators, hostnames, IP-like strings, and redacted potential-secret counts.
-2. **Isolated execution lab:** use Android Emulator images for API 26–35 and 36/37 where available, with two deliberately authored test apps. One app exposes synthetic test data; the other verifies that the data is not accessible across the app boundary.
-3. **Network metadata mode:** add a visible, user-started VPN capture service. Capture endpoint IPs, ports, protocol, timestamps, packet sizes, DNS and TLS handshake metadata where observable. Do not claim per-app attribution unless verified on the target Android release/device.
-4. **Authorised debug inspection:** provide a sample SDK for apps we own/control. It can record sanitised request/response metadata before encryption and after decryption, and test-only key material only when explicitly enabled in a controlled build.
-5. **AI report:** analyse static findings and sanitised network metadata locally or after explicit opt-in. Never upload credentials, cookies, tokens, raw private traffic, or extracted secrets by default.
-
-The app must not attempt to bypass Android's sandbox or collect private keys, tokens, passwords, or message contents from unrelated apps.
+The root workflow `.github/workflows/weekly-apk.yml` builds and runs unit tests on relevant pushes and pull requests. Scheduled builds are conditional on the repository's open bug issue count. A successful run uploads a debug APK artifact for 30 days. A workflow run and artifact must be confirmed before sharing an APK link.
