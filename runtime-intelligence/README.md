@@ -1,15 +1,15 @@
 # Runtime Intelligence
 
-Android application starter for device-level runtime diagnostics.
+Lightweight Android shell for the LoganTech Runtime Intelligence project.
 
 ## Current implementation
 
-- Device RAM dashboard using Android's public `ActivityManager.MemoryInfo` API.
-- Manual refresh of total, available, estimated used RAM, and low-memory state.
+- Minimal launcher screen with no device-statistics generation.
+- No `ActivityManager` RAM queries, telemetry collection, refresh polling, or background monitor.
 - Minimum Android version: API 26 (Android 8.0).
 - Target SDK: API 35.
 
-This first milestone reports device-level memory statistics only. It does **not** inspect another app's private heap, bypass Android sandbox protections, or run a continuous background monitor.
+Device-wide statistics have deliberately been removed to reduce runtime work and avoid collecting data that is not needed. Future diagnostics should be explicitly user-triggered and privacy-scoped.
 
 ## Build locally
 
@@ -31,7 +31,7 @@ A manual workflow dispatch also runs the build. This automation builds the code;
 
 ## Planned milestones
 
-1. Process statistics for a user-selected app using Android-authorized usage data.
+1. User-triggered diagnostics with explicit Android permission and privacy controls.
 2. Runtime event thresholds and structured diagnostic reports.
 3. Optional HTTPS upload to a user-configured REST endpoint.
 4. AI Bug Intelligence that proposes tested fixes through pull requests.
@@ -57,3 +57,8 @@ Optionally set the repository Actions variable `AI_MODEL`; the default is `gpt-4
 The engine posts an analysis comment when it cannot propose a safe patch. If it proposes a patch, it restricts changes to existing files under this project, runs the unit-test task and debug APK build, then opens a **draft pull request**. It never merges automatically. Review every generated change before approval.
 
 <!-- build-trigger: 2026-11-19 -->
+
+
+## APK / DEX engineering
+
+The app is maintained from Kotlin source, so normal builds compile directly to DEX; there is no reason to round-trip through Smali for this change. For APKs where source is unavailable, use JADX for inspection and Google's maintained `smali-dexlib2` library for structured, programmatic DEX edits without hand-editing Smali text. Use Apktool only when Android resources or manifest decoding/repackaging is required. Any patched APK must be zip-aligned, signed with an authorized key, and verified before installation.
