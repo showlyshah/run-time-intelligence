@@ -144,7 +144,7 @@ class ApkModificationStudio(private val context: Context) {
             "doubleclick" to "Ad network reference"
         )
         val base = result.decodedDirectory.toPath()
-        val files = Files.walk(base).use { paths -> paths.filter { Files.isRegularFile(it) && it.toString().endsWith(".smali", true) }.limit(500).toList() }
+        val files = Files.walk(base).use { paths -> paths.filter { Files.isRegularFile(it) && it.toString().endsWith(".smali", true) }.limit(500).collect(java.util.stream.Collectors.toList()) }
         val output = mutableListOf<CodeFinding>()
         var bytesRead = 0L
         var scanned = 0
@@ -178,7 +178,7 @@ class ApkModificationStudio(private val context: Context) {
 
     fun listSmaliFiles(result: ApkStudioResult, maxFiles: Int = 300): List<String> {
         val base = result.decodedDirectory.toPath()
-        return Files.walk(base).use { paths -> paths.filter { Files.isRegularFile(it) && it.toString().endsWith(".smali", true) }.limit(maxFiles.toLong()).map { base.relativize(it).toString() }.toList() }
+        return Files.walk(base).use { paths -> paths.filter { Files.isRegularFile(it) && it.toString().endsWith(".smali", true) }.limit(maxFiles.toLong()).map { base.relativize(it).toString() }.collect(java.util.stream.Collectors.toList()) }
     }
 
     fun saveSmaliPatch(result: ApkStudioResult, relativePath: String, updatedText: String): String {
