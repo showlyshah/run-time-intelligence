@@ -9,8 +9,8 @@ android {
         applicationId = "com.sha.mymoney"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.3.5"
+        versionCode = 10
+        versionName = "0.3.6"
     }
     signingConfigs {
         create("release") {
@@ -35,4 +35,5 @@ android {
 
 dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.1")
+    implementation("androidx.dynamicanimation:dynamicanimation:1.0.0")
 }
