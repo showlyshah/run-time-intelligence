@@ -20,6 +20,10 @@ import java.util.*
 import java.io.ByteArrayOutputStream
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Constraints
+import androidx.work.NetworkType
+import androidx.work.ExistingWorkPolicy
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
 import java.time.LocalDate
@@ -27,6 +31,8 @@ import java.time.temporal.ChronoUnit
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 
 private const val BG = 0xFF101827.toInt()
 private const val PANEL = 0xFF1D2A3D.toInt()
@@ -150,13 +156,33 @@ class MainActivity:Activity(){
  private fun panel():LinearLayout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(10),dp(8),dp(10),dp(8));background=rounded(PANEL,18f,0xFF34465F.toInt())}
  private fun money(v:Double)="₹"+String.format(Locale("en","IN"),"%.2f",v)
  private fun dateNow()=SimpleDateFormat("yyyy-MM-dd",Locale.US).format(Date())
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);store=Store(this);scheduleMonthlyBackup();scheduleBillReminders();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),711);window.statusBarColor=BG;window.navigationBarColor=BG;@Suppress("DEPRECATION") window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;show()}
+ override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);store=Store(this);if(intent.getBooleanExtra("open_about",false))tab=6;scheduleMonthlyBackup();scheduleBillReminders();scheduleVersionChecks();showUpdateNotificationIfAvailable();if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),711);window.statusBarColor=BG;window.navigationBarColor=BG;@Suppress("DEPRECATION") window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;show()}
+ private fun scheduleVersionChecks(){
+  val constraints=Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+  val periodic=PeriodicWorkRequestBuilder<VersionCheckWorker>(12,TimeUnit.HOURS).setConstraints(constraints).build()
+  WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork("logantech_version_check",ExistingPeriodicWorkPolicy.KEEP,periodic)
+  val immediate=OneTimeWorkRequestBuilder<VersionCheckWorker>().setConstraints(constraints).build()
+  WorkManager.getInstance(applicationContext).enqueueUniqueWork("logantech_version_check_now",ExistingWorkPolicy.KEEP,immediate)
+ }
+ private fun showUpdateNotificationIfAvailable(){
+  val prefs=getSharedPreferences("logantech_updates",MODE_PRIVATE)
+  if(!prefs.getBoolean("update_available",false))return
+  if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)return
+  val version=prefs.getString("latest_version","New version")?:"New version"
+  val channel="logantech_app_updates"
+  val manager=getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+  if(Build.VERSION.SDK_INT>=26)manager.createNotificationChannel(NotificationChannel(channel,"App updates",NotificationManager.IMPORTANCE_LOW).apply{description="Notifications when a newer LoganTech app version is available"})
+  val open=Intent(this,MainActivity::class.java).apply{flags=Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP;putExtra("open_about",true)}
+  val pending=PendingIntent.getActivity(this,731,open,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+  val notification=Notification.Builder(this,channel).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("LoganTech update available").setContentText("Version $version is ready to view on GitHub").setContentIntent(pending).setAutoCancel(true).setTimeoutAfter(3000).build()
+  manager.notify(731,notification)
+ }
  private fun scheduleMonthlyBackup(){val request=PeriodicWorkRequestBuilder<MonthlyBackupWorker>(30,TimeUnit.DAYS).build();WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork("mymoney_monthly_backup",ExistingPeriodicWorkPolicy.KEEP,request)}
  private fun scheduleBillReminders(){val request=PeriodicWorkRequestBuilder<BillReminderWorker>(24,TimeUnit.HOURS).build();WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork("logantech_bill_reminders",ExistingPeriodicWorkPolicy.KEEP,request)}
  private fun show(){
   root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(BG);setPadding(dp(12),dp(10),dp(12),dp(10))}
   val head=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
-  head.addView(text("💠 LoganTech Expenses Tracker",20f,GOLD),LinearLayout.LayoutParams(0,-2,1f))
+  head.addView(text("₹  LoganTech Expenses Tracker",20f,GOLD),LinearLayout.LayoutParams(0,-2,1f))
   head.addView(text(if(tab==6)"← BACK" else "ⓘ ABOUT",11f,GOLD).apply{setOnClickListener{tab=if(tab==6)0 else 6;show()}});root.addView(head)
   val body=ScrollView(this).apply{clipToPadding=false;isFillViewport=false}
   val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
@@ -193,7 +219,7 @@ class MainActivity:Activity(){
  private fun aboutPage(c:LinearLayout){
   c.addView(text("ABOUT THIS APP",12f,MUTED))
   val hero=panel().apply{gravity=Gravity.CENTER;setPadding(dp(20),dp(34),dp(20),dp(34))}
-  hero.addView(text("⚡",42f,GOLD).apply{gravity=Gravity.CENTER})
+  hero.addView(text("₹",48f,GOLD).apply{gravity=Gravity.CENTER;background=rounded(0xFF34445B.toInt(),60f);setPadding(dp(18),dp(10),dp(18),dp(10))})
   hero.addView(text("LOGANTECH",25f,Color.WHITE).apply{gravity=Gravity.CENTER;typeface=Typeface.create("sans-serif-black",Typeface.BOLD)})
   hero.addView(text("EXPENSES TRACKER",14f,GOLD).apply{gravity=Gravity.CENTER})
   val credit=text("VIBE CODED BY POWER WIZARD LABZ",16f,0xFF72D6A8.toInt()).apply{gravity=Gravity.CENTER;setPadding(dp(4),dp(22),dp(4),dp(12));typeface=Typeface.create("sans-serif-medium",Typeface.BOLD)}
@@ -205,6 +231,19 @@ class MainActivity:Activity(){
   val version=try{packageManager.getPackageInfo(packageName,0).versionName?: "Unknown"}catch(_:Exception){"Unknown"}
   details.addView(text("Version  $version",12f,MUTED))
   c.addView(details)
+  val updates=getSharedPreferences("logantech_updates",MODE_PRIVATE)
+  val updatePanel=panel()
+  updatePanel.addView(text("GITHUB VERSION CHECK",11f,MUTED))
+  val available=updates.getBoolean("update_available",false)
+  val latest=updates.getString("latest_version","")?:""
+  val checked=updates.getLong("last_check_time",0L)
+  updatePanel.addView(text(if(available)"⬆  Update available  •  v$latest" else "✓  No newer version detected",16f,if(available)GOLD else 0xFF72D6A8.toInt()))
+  updatePanel.addView(text(if(checked>0)"Last background check  •  "+SimpleDateFormat("dd MMM yyyy, hh:mm a",Locale.getDefault()).format(Date(checked)) else "Background checks run about every 12 hours when internet is available.",11f,MUTED))
+  if(available){
+   updatePanel.addView(text(updates.getString("release_notes","")?:"A newer version is available on GitHub.",12f,MUTED))
+   c.addView(updatePanel)
+   c.addView(button("⬇  View v$latest on GitHub"){val url=updates.getString("latest_url","https://github.com/showlyshah/run-time-intelligence/releases/latest")?:"https://github.com/showlyshah/run-time-intelligence/releases/latest";try{startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse(url)))}catch(e:Exception){Toast.makeText(this,"Could not open GitHub release",Toast.LENGTH_SHORT).show()}})
+  }else c.addView(updatePanel)
   c.addView(button("←  Back to Records"){tab=0;show()})
  }
  private fun totals(list:List<Tx>,kind:String)=list.filter{it.kind==kind}.sumOf{it.amount}
@@ -483,13 +522,46 @@ class PieView(ctx:android.content.Context,private val values:Map<String,Double>,
  private val label=Paint(3).apply{color=Color.WHITE;textAlign=Paint.Align.CENTER;typeface=Typeface.create("sans-serif-medium",Typeface.BOLD)}
  private var selected=-1
  private var chartRect=RectF()
- override fun onDraw(canvas:Canvas){super.onDraw(canvas);val total=values.values.sum();if(total<=0)return;val size=minOf(width,height).toFloat();val d=dp(18).toFloat();chartRect=RectF((width-size)/2+d,(height-size)/2+d,(width+size)/2-d,(height+size)/2-d);var start=-90f;val stroke=dp(30).toFloat();values.entries.forEachIndexed{i,e->paint.color=COLORS[i%COLORS.size];paint.style=Paint.Style.STROKE;paint.strokeWidth=stroke;paint.strokeCap=Paint.Cap.BUTT;val sweep=(e.value/total*360).toFloat();canvas.drawArc(chartRect,start+2f,(sweep-4f).coerceAtLeast(1f),false,paint);start+=sweep};paint.style=Paint.Style.FILL;paint.color=PANEL;val cx=width/2f;val cy=height/2f;canvas.drawCircle(cx,cy,dp(49).toFloat(),paint);label.textSize=dp(11).toFloat();canvas.drawText("TOTAL SPENT",cx,cy-dp(5),label);label.textSize=dp(17).toFloat();canvas.drawText("₹"+String.format(Locale("en","IN"),"%.0f",total),cx,cy+dp(17),label)}
+ override fun onDraw(canvas:Canvas){super.onDraw(canvas);val total=values.values.sum();if(total<=0)return;val size=minOf(width,height).toFloat();val d=dp(18).toFloat();chartRect=RectF((width-size)/2+d,(height-size)/2+d,(width+size)/2-d,(height+size)/2-d);var start=-90f;val stroke=dp(30).toFloat();values.entries.forEachIndexed{i,e->paint.color=COLORS[i%COLORS.size];paint.style=Paint.Style.STROKE;paint.strokeWidth=stroke;paint.strokeCap=Paint.Cap.BUTT;val sweep=(e.value/total*360).toFloat();canvas.drawArc(chartRect,start+2f,(sweep-4f).coerceAtLeast(1f),false,paint);val mid=Math.toRadians((start+sweep/2).toDouble());val radius=chartRect.width()/2f;val mx=width/2f+kotlin.math.cos(mid).toFloat()*radius;val my=height/2f+kotlin.math.sin(mid).toFloat()*radius;paint.style=Paint.Style.FILL;paint.color=0xFF172235.toInt();canvas.drawCircle(mx,my,dp(12).toFloat(),paint);label.textSize=dp(13).toFloat();canvas.drawText(categoryIcon(e.key),mx,my+dp(5).toFloat(),label);start+=sweep};paint.style=Paint.Style.FILL;paint.color=PANEL;val cx=width/2f;val cy=height/2f;canvas.drawCircle(cx,cy,dp(49).toFloat(),paint);label.textSize=dp(11).toFloat();canvas.drawText("TOTAL SPENT",cx,cy-dp(5),label);label.textSize=dp(17).toFloat();canvas.drawText("₹"+String.format(Locale("en","IN"),"%.0f",total),cx,cy+dp(17),label)}
  override fun onTouchEvent(event:android.view.MotionEvent):Boolean{if(event.action==android.view.MotionEvent.ACTION_UP){val cx=width/2f;val cy=height/2f;var angle=Math.toDegrees(kotlin.math.atan2((event.y-cy).toDouble(),(event.x-cx).toDouble())).toFloat()+90f;if(angle<0)angle+=360f;val total=values.values.sum();var acc=0f;values.entries.forEach{val sweep=(it.value/total*360).toFloat();if(angle>=acc&&angle<acc+sweep){onSelect(it.key);performClick();return true};acc+=sweep}};return true}
  override fun performClick():Boolean{super.performClick();return true}
  private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
 }
 
 
+
+class VersionCheckWorker(context:android.content.Context,params:androidx.work.WorkerParameters):androidx.work.Worker(context,params){
+ override fun doWork():androidx.work.ListenableWorker.Result{
+  var connection:HttpURLConnection?=null
+  return try{
+   connection=(URL("https://api.github.com/repos/showlyshah/run-time-intelligence/releases/latest").openConnection() as HttpURLConnection).apply{
+    requestMethod="GET";connectTimeout=12000;readTimeout=12000
+    setRequestProperty("Accept","application/vnd.github+json")
+    setRequestProperty("User-Agent","LoganTech-Expenses-Tracker-Android")
+   }
+   if(connection.responseCode!=200)return androidx.work.ListenableWorker.Result.retry()
+   val json=connection.inputStream.bufferedReader(Charsets.UTF_8).use{it.readText()}
+   val release=JSONObject(json)
+   val latest=release.optString("tag_name","").removePrefix("v").removePrefix("V").trim()
+   val url=release.optString("html_url","https://github.com/showlyshah/run-time-intelligence/releases/latest")
+   if(latest.isBlank())return androidx.work.ListenableWorker.Result.retry()
+   val current=try{applicationContext.packageManager.getPackageInfo(applicationContext.packageName,0).versionName?:"0.0.0"}catch(_:Exception){"0.0.0"}
+   val newer=compareVersions(latest,current)>0
+   val body=release.optString("body","").trim().take(450)
+   applicationContext.getSharedPreferences("logantech_updates",0).edit()
+    .putBoolean("update_available",newer).putString("latest_version",latest).putString("latest_url",url)
+    .putString("release_notes",body).putLong("last_check_time",System.currentTimeMillis()).apply()
+   androidx.work.ListenableWorker.Result.success()
+  }catch(_:Exception){androidx.work.ListenableWorker.Result.retry()}
+  finally{connection?.disconnect()}
+ }
+ private fun compareVersions(a:String,b:String):Int{
+  val left=a.split(Regex("[^0-9]+")).filter{it.isNotBlank()}.map{it.toIntOrNull()?:0}
+  val right=b.split(Regex("[^0-9]+")).filter{it.isNotBlank()}.map{it.toIntOrNull()?:0}
+  for(i in 0 until maxOf(left.size,right.size)){val x=left.getOrElse(i){0};val y=right.getOrElse(i){0};if(x!=y)return x.compareTo(y)}
+  return 0
+ }
+}
 
 class MonthlyBackupWorker(context:android.content.Context,params:androidx.work.WorkerParameters):androidx.work.Worker(context,params){
  override fun doWork():androidx.work.ListenableWorker.Result{
