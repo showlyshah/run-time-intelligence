@@ -2,6 +2,19 @@
 
 Android application for transparent, user-authorised runtime and network diagnostics.
 
+## App sandbox lab — initial implementation
+
+The app now includes a user-selected APK static-inspection workflow. It reads the APK as a file and does not install or execute it. The initial report includes:
+
+- Package name and version, requested permissions, and exported component counts.
+- Bounded scanning of DEX/configuration strings for URL hostnames and IPv4-like strings.
+- Counts of possible embedded-secret patterns, with candidate values deliberately hidden.
+- Explicit limitations and false-positive warnings.
+
+This is not an Android virtual machine or a second app runtime. A normal third-party Android app cannot transparently host arbitrary apps inside a separate Android OS sandbox or read their private runtime heap. True app virtualization requires a supported managed/work profile, a dedicated virtual-device environment, or a custom OS/virtualization framework; compatibility and isolation guarantees vary. The safe next step is to build an emulator-based lab and a companion test app that uses synthetic keys and opt-in debug instrumentation.
+
+The APK scanner does not recover runtime keys, decrypt HTTPS, or prove that a discovered hostname/IP is contacted. Runtime IP metadata collection remains a separate, opt-in VPN feature requiring Android's VPN consent dialog. Plaintext request/response inspection is limited to test apps or builds instrumented by their owner.
+
 ## Current diagnostics foundation
 
 - Device RAM dashboard using Android's public `ActivityManager.MemoryInfo` API.
@@ -49,3 +62,14 @@ A manual workflow dispatch and pushes affecting `runtime-intelligence/**` also r
 - Require explicit opt-in before sending diagnostic data to an external AI service.
 - Redact authentication headers, cookies, tokens, personal identifiers, and message content.
 - Do not add credentials, API keys, or signing keys to source control.
+
+
+## Sandbox analysis roadmap
+
+1. **Static APK inspection (implemented foundation):** user-selected APK, manifest permissions/components, DEX/configuration string indicators, hostnames, IP-like strings, and redacted potential-secret counts.
+2. **Isolated execution lab:** use Android Emulator images for API 26–35 and 36/37 where available, with two deliberately authored test apps. One app exposes synthetic test data; the other verifies that the data is not accessible across the app boundary.
+3. **Network metadata mode:** add a visible, user-started VPN capture service. Capture endpoint IPs, ports, protocol, timestamps, packet sizes, DNS and TLS handshake metadata where observable. Do not claim per-app attribution unless verified on the target Android release/device.
+4. **Authorised debug inspection:** provide a sample SDK for apps we own/control. It can record sanitised request/response metadata before encryption and after decryption, and test-only key material only when explicitly enabled in a controlled build.
+5. **AI report:** analyse static findings and sanitised network metadata locally or after explicit opt-in. Never upload credentials, cookies, tokens, raw private traffic, or extracted secrets by default.
+
+The app must not attempt to bypass Android's sandbox or collect private keys, tokens, passwords, or message contents from unrelated apps.
