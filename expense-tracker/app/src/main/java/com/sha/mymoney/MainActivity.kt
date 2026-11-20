@@ -78,7 +78,7 @@ class MainActivity:Activity(){
  override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);store=Store(this);scheduleMonthlyBackup();window.statusBarColor=BG;window.navigationBarColor=BG;show()}
  private fun scheduleMonthlyBackup(){val request=PeriodicWorkRequestBuilder<MonthlyBackupWorker>(30,TimeUnit.DAYS).build();WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork("mymoney_monthly_backup",ExistingPeriodicWorkPolicy.KEEP,request)}
  private fun show(){root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(BG);setPadding(dp(12),dp(10),dp(12),dp(4))}
-  val head=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL};head.addView(text("💠 MyMoney",26f,GOLD),LinearLayout.LayoutParams(0,-2,1f));head.addView(text("SMART FINANCE",10f,MUTED));root.addView(head)
+  val head=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL};head.addView(text("💠 LoganTech Expenses Tracker",20f,GOLD),LinearLayout.LayoutParams(0,-2,1f));head.addView(text("SMART FINANCE",10f,MUTED));root.addView(head)
   val body=ScrollView(this);val content=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL};body.addView(content);root.addView(body,LinearLayout.LayoutParams(-1,0,1f))
   when(tab){0->records(content);1->analysis(content);2->budgetsPage(content);3->accountsPage(content);4->categoriesPage(content)}
   val nav=LinearLayout(this).apply{background=rounded(PANEL,20f);gravity=Gravity.CENTER};listOf("📒\\nRecords","📊\\nAnalysis","🎯\\nBudgets","🏦\\nAccounts","🎨\\nCategories").forEachIndexed{i,n->val b=TextView(this).apply{text=n;textSize=10f;gravity=Gravity.CENTER;setTextColor(if(tab==i)GOLD else MUTED);setTypeface(null,if(tab==i)Typeface.BOLD else Typeface.NORMAL);setPadding(dp(2),dp(9),dp(2),dp(9));setOnClickListener{tab=i;chosenCategory=null;show()}};nav.addView(b,LinearLayout.LayoutParams(0,-2,1f))};root.addView(nav);setContentView(root)
@@ -115,19 +115,19 @@ class MainActivity:Activity(){
  private fun createExportFile(format:String){
   exportFormat=format
   val stamp=SimpleDateFormat("yyyyMMdd-HHmm",Locale.US).format(Date())
-  val intent=Intent(Intent.ACTION_CREATE_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type=if(format=="pdf")"application/pdf" else "text/csv";putExtra(Intent.EXTRA_TITLE,"MyMoney-$stamp.$format")}
+  val intent=Intent(Intent.ACTION_CREATE_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type=if(format=="pdf")"application/pdf" else "text/csv";putExtra(Intent.EXTRA_TITLE,"LoganTechExpenses-$stamp.$format")}
   startActivityForResult(intent,710)
  }
  override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
   super.onActivityResult(requestCode,resultCode,data)
   if(requestCode==710&&resultCode==Activity.RESULT_OK){val uri=data?.data?:return
-   try{val bytes=if(exportFormat=="pdf")buildSummaryPdf() else buildTransactionsCsv().toByteArray(Charsets.UTF_8);contentResolver.openOutputStream(uri)?.use{it.write(bytes)};Toast.makeText(this,"MyMoney export saved successfully",Toast.LENGTH_LONG).show()}
+   try{val bytes=if(exportFormat=="pdf")buildSummaryPdf() else buildTransactionsCsv().toByteArray(Charsets.UTF_8);contentResolver.openOutputStream(uri)?.use{it.write(bytes)};Toast.makeText(this,"LoganTech Expenses Tracker export saved successfully",Toast.LENGTH_LONG).show()}
    catch(e:Exception){Toast.makeText(this,"Export failed: "+e.message,Toast.LENGTH_LONG).show()}
   }
  }
  private fun summaryText():String{
   val tx=store.all();val income=totals(tx,"Income");val expense=totals(tx,"Expense");val opening=store.accounts().sumOf{it.opening};val out=StringBuilder()
-  out.append("MYMONEY FINANCIAL SUMMARY\n")
+  out.append("LOGANTECH EXPENSES TRACKER FINANCIAL SUMMARY\n")
   out.append("Generated: ").append(SimpleDateFormat("dd MMM yyyy, HH:mm",Locale.getDefault()).format(Date())).append("\n\n")
   out.append("Total balance: ").append(money(opening+income-expense)).append("\n")
   out.append("Total income: ").append(money(income)).append("\n")
@@ -152,7 +152,7 @@ class MainActivity:Activity(){
   doc.finishPage(page);val stream=ByteArrayOutputStream();doc.writeTo(stream);doc.close();return stream.toByteArray()
  }
  private fun shareSummaryNote(){
-  val intent=Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_SUBJECT,"MyMoney financial summary");putExtra(Intent.EXTRA_TEXT,summaryText())}
+  val intent=Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_SUBJECT,"LoganTech Expenses Tracker financial summary");putExtra(Intent.EXTRA_TEXT,summaryText())}
   startActivity(Intent.createChooser(intent,"Save summary to Google Keep / Notes"))
  }
 
@@ -178,7 +178,7 @@ class MonthlyBackupWorker(context:android.content.Context,params:androidx.work.W
    tx.forEach{t->val fields=listOf(t.date,t.kind,t.category,t.title,t.amount.toString(),t.account);csv.append(fields.joinToString(","){ "\""+it.replace("\"","\"\"")+"\"" }).append("\n")}
    val income=tx.filter{it.kind=="Income"}.sumOf{it.amount};val expense=tx.filter{it.kind=="Expense"}.sumOf{it.amount};val opening=store.accounts().sumOf{it.opening}
    val summary=buildString{
-    append("MYMONEY MONTHLY BACKUP\nGenerated: ").append(stamp).append("\n")
+    append("LOGANTECH EXPENSES TRACKER MONTHLY BACKUP\nGenerated: ").append(stamp).append("\n")
     append("Total balance: ₹").append(String.format(Locale.US,"%.2f",opening+income-expense)).append("\n")
     append("Total income: ₹").append(String.format(Locale.US,"%.2f",income)).append("\n")
     append("Total expenses: ₹").append(String.format(Locale.US,"%.2f",expense)).append("\n")
@@ -186,8 +186,8 @@ class MonthlyBackupWorker(context:android.content.Context,params:androidx.work.W
     tx.filter{it.kind=="Expense"}.groupBy{it.category}.mapValues{e->e.value.sumOf{it.amount}}.toList().sortedByDescending{it.second}.forEach{append(it.first).append(": ₹").append(String.format(Locale.US,"%.2f",it.second)).append("\n")}
     append("\nTRANSACTIONS\n");tx.forEach{append(it.date).append(" | ").append(it.kind).append(" | ").append(it.category).append(" | ").append(it.title).append(" | ₹").append(it.amount).append(" | ").append(it.account).append("\n")}
    }
-   saveBackup("MyMoney-$stamp.csv","text/csv",csv.toString().toByteArray(Charsets.UTF_8))
-   saveBackup("MyMoney-$stamp-summary.txt","text/plain",summary.toByteArray(Charsets.UTF_8))
+   saveBackup("LoganTechExpenses-$stamp.csv","text/csv",csv.toString().toByteArray(Charsets.UTF_8))
+   saveBackup("LoganTechExpenses-$stamp-summary.txt","text/plain",summary.toByteArray(Charsets.UTF_8))
    androidx.work.ListenableWorker.Result.success()
   }catch(_:Exception){androidx.work.ListenableWorker.Result.retry()}
  }
@@ -197,7 +197,7 @@ class MonthlyBackupWorker(context:android.content.Context,params:androidx.work.W
    val uri=applicationContext.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values)?:throw java.io.IOException("Could not create backup file")
    applicationContext.contentResolver.openOutputStream(uri)?.use{it.write(bytes)}?:throw java.io.IOException("Could not write backup file")
   }else{
-   val dir=java.io.File(applicationContext.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS),"MyMoneyBackups")
+   val dir=java.io.File(applicationContext.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS),"LoganTechExpensesBackups")
    if(!dir.exists()&&!dir.mkdirs())throw java.io.IOException("Could not create backup folder")
    java.io.File(dir,name).writeBytes(bytes)
   }
