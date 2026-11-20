@@ -25,7 +25,6 @@ import java.util.Locale
 import java.util.zip.ZipFile
 import javax.security.auth.x500.X500Principal
 import javax.xml.parsers.DocumentBuilderFactory
-import javax.xml.XMLConstants
 import org.xml.sax.InputSource
 import java.io.StringReader
 import javax.xml.transform.OutputKeys
@@ -371,8 +370,6 @@ class ApkModificationStudio(private val context: Context) {
         isNamespaceAware = true
         runCatching { isXIncludeAware = false }
         runCatching { isExpandEntityReferences = false }
-        runCatching { setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "") }
-        runCatching { setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "") }
         runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
         runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
         runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
