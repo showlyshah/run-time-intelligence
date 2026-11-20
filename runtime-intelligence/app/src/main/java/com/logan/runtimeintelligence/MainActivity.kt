@@ -1,71 +1,58 @@
 package com.logan.runtimeintelligence
 
 import android.app.Activity
-import android.app.ActivityManager
 import android.os.Bundle
-import android.widget.Button
+import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
-import java.util.Locale
 
+/**
+ * Lightweight landing screen.
+ *
+ * Device-wide RAM statistics and refresh polling were deliberately removed.
+ * This activity does not query ActivityManager, collect telemetry, or start
+ * background monitoring. Runtime diagnostics can be added later as explicit,
+ * user-triggered features with clear privacy controls.
+ */
 class MainActivity : Activity() {
-    private lateinit var memorySummary: TextView
-    private lateinit var status: TextView
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val density = resources.displayMetrics.density
+        fun dp(value: Int): Int = (value * density + 0.5f).toInt()
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 48, 40, 40)
+            gravity = Gravity.CENTER
+            setPadding(dp(28), dp(32), dp(28), dp(32))
         }
 
         val heading = TextView(this).apply {
             text = "Runtime Intelligence"
-            textSize = 26f
+            textSize = 25f
+            gravity = Gravity.CENTER
         }
-        status = TextView(this).apply {
-            text = "Device memory dashboard"
+        val status = TextView(this).apply {
+            text = "Device statistics are disabled. No device RAM telemetry is being collected."
             textSize = 15f
-            setPadding(0, 16, 0, 24)
-        }
-        memorySummary = TextView(this).apply {
-            textSize = 18f
-            setPadding(0, 0, 0, 24)
-        }
-        val refresh = Button(this).apply {
-            text = "Refresh memory statistics"
-            setOnClickListener { refreshMemoryStats() }
+            gravity = Gravity.CENTER
+            setPadding(0, dp(16), 0, 0)
         }
 
-        root.addView(heading)
-        root.addView(status)
-        root.addView(memorySummary)
-        root.addView(refresh)
-        setContentView(root)
-
-        refreshMemoryStats()
-    }
-
-    private fun refreshMemoryStats() {
-        val manager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
-        val info = ActivityManager.MemoryInfo()
-        manager.getMemoryInfo(info)
-
-        val totalMb = info.totalMem / (1024.0 * 1024.0)
-        val availableMb = info.availMem / (1024.0 * 1024.0)
-        val usedMb = totalMb - availableMb
-        val usedPercent = if (totalMb > 0) (usedMb / totalMb) * 100.0 else 0.0
-
-        memorySummary.text = String.format(
-            Locale.getDefault(),
-            "Total RAM: %.0f MB\nAvailable RAM: %.0f MB\nEstimated used RAM: %.0f MB (%.1f%%)\nLow-memory state: %s",
-            totalMb,
-            availableMb,
-            usedMb,
-            usedPercent,
-            if (info.lowMemory) "Yes" else "No"
+        root.addView(
+            heading,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
         )
-        status.text = "Updated just now • Device-level statistics"
+        root.addView(
+            status,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+        setContentView(root)
     }
 }
